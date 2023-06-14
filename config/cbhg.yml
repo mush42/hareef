@@ -15,12 +15,12 @@ data_separator: '|' # Required if the data already processed
 diacritics_separator: '*'  # Required if the data already processed
 text_encoder: ArabicEncoderWithStartSymbol
 text_cleaner: valid_arabic_cleaners # a white list that uses only Arabic letters, punctuations, and a space
-max_len: 600 # sentences larger than this size will not be used
+max_len: 315 # sentences larger than this size will not be used
 
 
 max_steps: 2_000_000
 learning_rate: 0.001
-batch_size: 16
+batch_size: 32
 adam_beta1: 0.9
 adam_beta2: 0.999
 use_decay: true

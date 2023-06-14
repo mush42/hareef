@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import os
 import argparse
 import random
 from concurrent.futures import ProcessPoolExecutor
@@ -12,8 +13,6 @@ from diacritization_evaluation.util import extract_haraqat
 from config_manager import ConfigManager
 
 
-LINE_MIN_CHARS = 15
-LINE_MAX_CHARS = 600
 INVALID_HARAKA_REPLACE = {
     "َّ": "َّ",
     "ِّ": "ِّ",
@@ -28,27 +27,26 @@ INVALID_HARAKA_REPLACE = {
 def validate_diacritics(line):
     try:
         text, inputs, diacritics = extract_haraqat(line)
-        return text
+        if any(diacritics):
+            return text
     except ValueError:
         return
 
 
-def segment_sentences(line):
-    return list(_do_segment_sentences(line))
+def segment_sentences(max_chars, line):
+    return list(_do_segment_sentences(line, max_chars))
 
 
-def _do_segment_sentences(line):
+def _do_segment_sentences(line, max_chars):
     sent_puncs = [".", "،", "؛", ":"]
-    lines = [
-        line,
-    ]
+    lines = [line,]
     for punc in sent_puncs:
         sents = [sent for sent in line.split(punc) for line in lines]
-        lines = []
+        lines.clear()
         for sent in sents:
-            if LINE_MIN_CHARS <= len(sent) <= LINE_MAX_CHARS:
+            if len(sent) <= max_chars:
                 yield sent
-            elif len(sent) >= LINE_MIN_CHARS:
+            else:
                 lines.append(sent)
 
 
@@ -105,13 +103,14 @@ def main():
     args = parser.parse_args()
 
     config = ConfigManager(args.config)
+
     output_dir = Path(config.data_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.debug:
         max_workers, chunksize = (args.workers or 8, args.batch_size or 720)
     else:
-        max_workers, chunksize = (args.workers or 56, args.batch_size or round(32e3))
+        max_workers, chunksize = (args.workers or (os.cpu_count() * 4), args.batch_size or round(16e3))
 
     if args.reset_dir:
         print("Cleaning output directory...")
@@ -133,8 +132,22 @@ def main():
     print("Removing spurious dots at the beginning of lines...")
     lines = [l.lstrip(".") for l in lines]
 
+    print("Splitting lines into sentences")
+    max_chars = config.config["max_len"]
+    print(f"Maximom length allowed: {max_chars}")
+    valid_lines = set(l for l in lines if len(l) <= max_chars)
+    invalid_lines = set(lines).difference(valid_lines)
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        sents = executor.map(
+            partial(segment_sentences, max_chars),
+            invalid_lines,
+            chunksize=chunksize
+        )
+    lines = [*valid_lines, *collapse(sents)]
+    print(f"Num sentences: {len(lines)}")
+
     if args.validate:
-        print("Removing sentences with invalid diacritics...")
+        print("Removing sentences with invalid or no diacritics...")
         total_lines = len(lines)
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             processed_lines = executor.map(
@@ -142,14 +155,7 @@ def main():
             )
         lines = list(filter(None, processed_lines))
         print(f"Ignored: {total_lines - len(lines)}")
-
-    print("Splitting lines into sentences")
-    valid_lines = set(l for l in lines if LINE_MIN_CHARS <= len(l) <= LINE_MAX_CHARS)
-    invalid_lines = set(lines).difference(valid_lines)
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        sents = executor.map(segment_sentences, invalid_lines, chunksize=chunksize)
-    lines = [*valid_lines, *collapse(sents)]
-    print(f"Num sentences: {len(lines)}")
+        print(f"Num valid sentences: {len(lines)}")
 
     print("Shuffling lines")
     random.shuffle(lines)
