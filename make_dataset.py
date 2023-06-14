@@ -163,7 +163,7 @@ def main():
     n_lines = len(lines)
 
     print("Making validation dataset...")
-    n_val = args.n_val or round(n_lines * 0.2)
+    n_val = args.n_val or round(n_lines * 0.01)
     lines, val_lines = take_sample(lines, n_val)
 
     print("Making testing dataset...")

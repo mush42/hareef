@@ -40,7 +40,7 @@ device: cuda
 
 # LOGGING
 evaluate_frequency: 5000
-evaluate_with_error_rates_frequency: 5000
+evaluate_with_error_rates_frequency: 2000
 n_predicted_text_tensorboard: 10 # To be written to the tensorboard
 model_save_frequency: 1000
 train_plotting_frequency: 500 # No plotting for this model
