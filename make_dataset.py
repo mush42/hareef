@@ -12,6 +12,8 @@ from diacritization_evaluation.util import extract_haraqat
 
 from config_manager import ConfigManager
 
+# Order is critical
+SENTENCE_BOUNDRY_PUNCS = [".", "،", "؛", ":"]
 
 INVALID_HARAKA_REPLACE = {
     "َّ": "َّ",
@@ -38,9 +40,8 @@ def segment_sentences(max_chars, line):
 
 
 def _do_segment_sentences(line, max_chars):
-    sent_puncs = [".", "،", "؛", ":"]
     lines = [line,]
-    for punc in sent_puncs:
+    for punc in SENTENCE_BOUNDRY_PUNCS:
         sents = [sent for sent in line.split(punc) for line in lines]
         lines.clear()
         for sent in sents:
