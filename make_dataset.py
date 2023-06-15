@@ -46,7 +46,7 @@ def _do_segment_sentences(line, max_chars):
         lines.clear()
         for sent in sents:
             if len(sent) <= max_chars:
-                yield sent
+                yield sent.rstrip() + punc
             else:
                 lines.append(sent)
 
