@@ -45,8 +45,8 @@ def _do_segment_sentences(line, max_chars):
         sents = [sent for sent in line.split(punc) for line in lines]
         lines.clear()
         for sent in sents:
-            if len(sent) <= max_chars:
-                yield sent.rstrip() + punc
+            if 0 < len(sent) <= max_chars:
+                yield sent.rstrip() + '.'
             else:
                 lines.append(sent)
 
@@ -67,9 +67,10 @@ def write_lines(filename, lines):
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description ="Make training, validation, and test datasets from given corpus.")
     parser.add_argument(
         "--corpus",
+        action="append",
         type=str,
         required=True,
         help="The corpus text file containing lines of diacritized Arabic text",
@@ -119,7 +120,12 @@ def main():
             file.unlink()
 
     print("Reading text from corpus...")
-    text = Path(args.corpus).read_text(encoding="utf-8")
+    corp_paths = set(Path(c).resolve() for c in args.corpus)
+    print("\n".join(os.fspath(p) for p in corp_paths))
+    text = "\n".join(
+        corp.read_text(encoding="utf-8").strip()
+        for corp in corp_paths
+    )
     print("Fixing invalid haraka chars in corpus...")
     text = fix_invalid_haraka(text)
 
