@@ -5,6 +5,7 @@ from itertools import repeat
 import numpy as np
 import torch
 
+from infer import TorchCBHGDiacritizer, OnnxCBHGDiacritizer
 
 SEED = 1234
 random.seed(SEED)
@@ -24,13 +25,9 @@ def main():
     args = parser.parse_args()
 
     if args.onnx:
-        from infer_onnx import CBHGDiacritizer
-
-        diacritizer = CBHGDiacritizer(args.config, onnx_model=args.onnx)
+        diacritizer = OnnxCBHGDiacritizer(args.config, onnx_model=args.onnx)
     else:
-        from infer_torch import CBHGDiacritizer
-
-        diacritizer = CBHGDiacritizer(args.config, load_model=True)
+        diacritizer = TorchCBHGDiacritizer(args.config, load_model=True)
 
     print("\n".join(diacritizer.diacritize_text(args.text)))
 

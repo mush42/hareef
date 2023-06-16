@@ -40,7 +40,9 @@ def segment_sentences(max_chars, line):
 
 
 def _do_segment_sentences(line, max_chars):
-    lines = [line,]
+    lines = [
+        line,
+    ]
     for punc in SENTENCE_BOUNDRY_PUNCS:
         sents = [sent for sent in line.split(punc) for line in lines]
         lines.clear()
@@ -67,7 +69,9 @@ def write_lines(filename, lines):
 
 
 def main():
-    parser = argparse.ArgumentParser(description ="Make training, validation, and test datasets from given corpus.")
+    parser = argparse.ArgumentParser(
+        description="Make training, validation, and test datasets from given corpus."
+    )
     parser.add_argument(
         "--corpus",
         action="append",
@@ -112,7 +116,10 @@ def main():
     if args.debug:
         max_workers, chunksize = (args.workers or 8, args.batch_size or 720)
     else:
-        max_workers, chunksize = (args.workers or (os.cpu_count() * 4), args.batch_size or round(16e3))
+        max_workers, chunksize = (
+            args.workers or (os.cpu_count() * 4),
+            args.batch_size or round(16e3),
+        )
 
     if args.reset_dir:
         print("Cleaning output directory...")
@@ -122,10 +129,7 @@ def main():
     print("Reading text from corpus...")
     corp_paths = set(Path(c).resolve() for c in args.corpus)
     print("\n".join(os.fspath(p) for p in corp_paths))
-    text = "\n".join(
-        corp.read_text(encoding="utf-8").strip()
-        for corp in corp_paths
-    )
+    text = "\n".join(corp.read_text(encoding="utf-8").strip() for corp in corp_paths)
     print("Fixing invalid haraka chars in corpus...")
     text = fix_invalid_haraka(text)
 
@@ -146,9 +150,7 @@ def main():
     invalid_lines = set(lines).difference(valid_lines)
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         sents = executor.map(
-            partial(segment_sentences, max_chars),
-            invalid_lines,
-            chunksize=chunksize
+            partial(segment_sentences, max_chars), invalid_lines, chunksize=chunksize
         )
     lines = [*valid_lines, *collapse(sents)]
     print(f"Num sentences: {len(lines)}")
