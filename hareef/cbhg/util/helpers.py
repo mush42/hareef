@@ -1,13 +1,16 @@
+# coding: utf-8
+
 import os
+from dataclasses import dataclass
+from itertools import repeat
 from typing import Any
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch import nn
-from itertools import repeat
-from util.decorators import ignore_exception
-from dataclasses import dataclass
-import numpy as np
+
+from .decorators import ignore_exception
 
 
 @dataclass

@@ -1,6 +1,11 @@
+# coding: utf-8
+
+
 """
 Constants that are used by the model
 """
+
+
 HARAQAT = ["ْ", "ّ", "ٌ", "ٍ", "ِ", "ً", "َ", "ُ"]
 ARAB_CHARS = "ىعظحرسيشضق ثلصطكآماإهزءأفؤغجئدةخوبذتن"
 PUNCTUATIONS = [".", "،", ":", "؛", "-", "؟"]

@@ -1,15 +1,13 @@
-"""
-Loading the diacritization dataset
-"""
+# coding: utf-8
 
 import os
 
-from diacritization_evaluation import util
 import pandas as pd
 import torch
+from diacritization_evaluation import util
 from torch.utils.data import DataLoader, Dataset
 
-from config_manager import ConfigManager
+from .config_manager import ConfigManager
 
 
 class DiacritizationDataset(Dataset):
@@ -133,7 +131,7 @@ def load_test_data(config_manager: ConfigManager, loader_parameters):
     if not config_manager.config["load_test_data"]:
         return []
     if config_manager.config["is_data_preprocessed"]:
-        test_file_name = config_manager.config.get("test_file_name", "test.csv")
+        test_file_name = "test.csv"
         path = os.path.join(config_manager.data_dir, test_file_name)
         test_data = pd.read_csv(
             path,
@@ -145,7 +143,7 @@ def load_test_data(config_manager: ConfigManager, loader_parameters):
         # test_data = test_data[test_data[0] <= config_manager.config["max_len"]]
         test_dataset = DiacritizationDataset(config_manager, test_data.index, test_data)
     else:
-        test_file_name = config_manager.config.get("test_file_name", "test.txt")
+        test_file_name = "test.txt"
         path = os.path.join(config_manager.data_dir, test_file_name)
         with open(path, encoding="utf8") as file:
             test_data = file.readlines()

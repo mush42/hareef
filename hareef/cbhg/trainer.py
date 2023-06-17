@@ -1,35 +1,26 @@
+# coding: utf-8
+
+
 import os
 from typing import Dict
 
-from diacritization_evaluation import der, wer
 import torch
-from torch import nn
-from torch import optim
+from diacritization_evaluation import der, wer
+from torch import nn, optim
 from torch.cuda.amp import autocast
 from torch.utils.tensorboard.writer import SummaryWriter
-from tqdm import tqdm
-from tqdm import trange
+from tqdm import tqdm, trange
 
-from config_manager import ConfigManager
-from dataset import load_iterators
-from infer_torch import CBHGDiacritizer
-from util.learning_rates import LearningRateDecay
-from options import OptimizerType
-from util.utils import (
-    categorical_accuracy,
-    count_parameters,
-    initialize_weights,
-    plot_alignment,
-    repeater,
-)
+from .config_manager import ConfigManager
+from .dataset import load_iterators
+from .diacritizer import TorchCBHGDiacritizer
+from .options import OptimizerType
+from .util.helpers import (categorical_accuracy, count_parameters,
+                           initialize_weights, plot_alignment, repeater)
+from .util.learning_rates import LearningRateDecay
 
 
-class Trainer:
-    def run(self):
-        raise NotImplementedError
-
-
-class GeneralTrainer(Trainer):
+class CBHGTrainer(Trainer):
     def __init__(self, config_path: str) -> None:
         self.config_path = config_path
         self.config_manager = ConfigManager(config_path)
@@ -74,7 +65,7 @@ class GeneralTrainer(Trainer):
         print(f"The model has {parameters_count} trainable parameters parameters")
 
     def load_diacritizer(self):
-        self.diacritizer = CBHGDiacritizer(self.config_path)
+        self.diacritizer = TorchCBHGDiacritizer(self.config_path)
 
     def initialize_model(self):
         if self.global_step > 1:
@@ -392,7 +383,3 @@ class GeneralTrainer(Trainer):
 
     def report(self, results, tqdm):
         pass
-
-
-class CBHGTrainer(GeneralTrainer):
-    pass

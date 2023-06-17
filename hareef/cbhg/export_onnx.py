@@ -2,9 +2,11 @@
 
 import argparse
 import random
-import torch
 from pathlib import Path
-from config_manager import ConfigManager
+
+import torch
+
+from .config_manager import ConfigManager
 
 OPSET_VERSION = 15
 

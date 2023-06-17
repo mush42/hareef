@@ -1,16 +1,18 @@
-from config_manager import ConfigManager
+# coding: utf-8
+
+
 import os
 from typing import Dict
 
 from torch import nn
-from tqdm import tqdm
-from tqdm import trange
+from tqdm import tqdm, trange
 
-from dataset import load_iterators
-from trainer import GeneralTrainer
+from .config_manager import ConfigManager
+from .dataset import load_iterators
+from .trainer import CBHGTrainer
 
 
-class DiacritizationTester(GeneralTrainer):
+class DiacritizationTester(CBHGTrainer):
     def __init__(self, config_path: str) -> None:
         self.config_path = config_path
         self.config_manager = ConfigManager(config_path)

@@ -1,16 +1,16 @@
-"""
-The CBHG model implementation
-"""
+# coding: utf-8
+
 from typing import List, Optional
 
-from torch import nn
 import torch
+from torch import nn
 
-from modules.tacotron_modules import CBHG, Prenet
+from .modules.tacotron_modules import CBHG, Prenet
 
 
 class CBHGModel(nn.Module):
-    """CBHG model implementation as described in the paper:
+    """
+    CBHG model implementation as described in the paper:
      https://ieeexplore.ieee.org/document/9274427
 
     Args:

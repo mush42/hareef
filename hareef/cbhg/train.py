@@ -1,10 +1,13 @@
+# coding: utf-8
+
+
 import argparse
 import random
-from tester import DiacritizationTester
 
 import numpy as np
 import torch
 
+from .trainer import CBHGTrainer
 
 SEED = 1234
 random.seed(SEED)
@@ -15,15 +18,21 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
 
-def train_parser():
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", dest="config", type=str, required=True)
-    parser.add_argument("--model_path", dest="model_path", type=str, required=False)
-    return parser
+    parser.add_argument(
+        "--reset_dir",
+        dest="clear_dir",
+        action="store_true",
+        help="deletes everything under this config's folder.",
+    )
+
+    args = parser.parse_args()
+
+    trainer = CBHGTrainer(args.config)
+    trainer.run()
 
 
-parser = train_parser()
-args = parser.parse_args()
-
-tester = DiacritizationTester(args.config)
-tester.run()
+if __name__ == "__main__":
+    main()

@@ -1,11 +1,14 @@
+# coding: utf-8
+
 """
 Some custom modules that are used by the TTS model
 """
 from typing import List
+
 import torch
 from torch import nn
 
-from modules.layers import BatchNormConv1d
+from .layers import BatchNormConv1d
 
 
 class Prenet(nn.Module):

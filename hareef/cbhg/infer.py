@@ -1,3 +1,5 @@
+# coding: utf-8
+
 import argparse
 import random
 from itertools import repeat
@@ -5,7 +7,7 @@ from itertools import repeat
 import numpy as np
 import torch
 
-from infer import TorchCBHGDiacritizer, OnnxCBHGDiacritizer
+from .diacritizer import OnnxCBHGDiacritizer, TorchCBHGDiacritizer
 
 SEED = 1234
 random.seed(SEED)

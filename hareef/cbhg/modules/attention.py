@@ -1,10 +1,10 @@
 from typing import Optional
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
-from options import AttentionType
+from ..options import AttentionType
 
 
 class BahdanauAttention(nn.Module):

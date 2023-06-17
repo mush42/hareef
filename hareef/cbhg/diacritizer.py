@@ -7,10 +7,9 @@ import numpy as np
 import onnxruntime
 import torch
 
-from util.constants import HARAQAT
-from util.text_cleaners import valid_arabic_cleaners
-from config_manager import ConfigManager
-
+from .config_manager import ConfigManager
+from .util.constants import HARAQAT
+from .util.text_cleaners import valid_arabic_cleaners
 
 HARAQAT_TRANS_DICT = {ord(c): None for c in HARAQAT}
 
@@ -38,6 +37,9 @@ class TorchCBHGDiacritizer(Diacritizer):
     def __init__(self, *args, load_model: bool = False, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.load_model = load_model
+
+    def set_model(self, model):
+        self.model = model
 
     def diacritize_batch(self, batch):
         if self.config.get("device"):

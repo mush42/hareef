@@ -1,6 +1,9 @@
+# coding: utf-8
+
+from typing import Any
+
 import torch
 from torch import nn
-from typing import Any
 
 
 class BatchNormConv1d(nn.Module):

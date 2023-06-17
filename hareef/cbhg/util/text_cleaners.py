@@ -1,6 +1,8 @@
-import re
-from util.constants import VALID_ARABIC
+# coding: utf-8
 
+import re
+
+from .constants import VALID_ARABIC
 
 _whitespace_re = re.compile(r"\s+")
 

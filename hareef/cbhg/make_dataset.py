@@ -1,16 +1,16 @@
 # coding: utf-8
 
-import os
 import argparse
+import os
 import random
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
 
-from more_itertools import collapse
 from diacritization_evaluation.util import extract_haraqat
+from more_itertools import collapse
 
-from config_manager import ConfigManager
+from .config_manager import ConfigManager
 
 # Order is critical
 SENTENCE_BOUNDRY_PUNCS = [".", "،", "؛", ":"]

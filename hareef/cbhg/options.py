@@ -1,3 +1,6 @@
+# coding: utf-8
+
+
 """
 Types of various choices used during training
 """
