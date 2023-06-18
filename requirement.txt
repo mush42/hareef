@@ -1,12 +1,11 @@
 torch==2.0.1
+tensorboard==2.13.0
+tqdm==4.56.0
 numpy==1.24.3
+pandas==2.0.2
 matplotlib==3.7.1
-more_itertools==9.1.0
 onnx==1.14.0
 onnxruntime==1.15.0
-pandas==2.0.2
-pysbd==0.3.4
-ruamel.yaml==0.16.12
-tensorboard==2.13.0
+more_itertools==9.1.0
 diacritization-evaluation==0.5
-tqdm==4.56.0
+pysbd==0.3.4

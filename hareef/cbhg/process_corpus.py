@@ -13,7 +13,7 @@ from more_itertools import collapse
 from .config_manager import ConfigManager
 
 # Order is critical
-SENTENCE_BOUNDRY_PUNCS = [".", "،", "؛", ":"]
+SENTENCE_BOUNDRY_PUNCS = [".", "؟", "!", "،", "؛"]
 
 INVALID_HARAKA_REPLACE = {
     "َّ": "َّ",
@@ -70,6 +70,7 @@ def write_lines(filename, lines):
 
 def main():
     parser = argparse.ArgumentParser(
+        prog="hareef.cbhg.dataset",
         description="Make training, validation, and test datasets from given corpus."
     )
     parser.add_argument(
@@ -101,7 +102,7 @@ def main():
         "--workers", type=int, default=0, help="Number of processes used"
     )
     parser.add_argument(
-        "--batch-size",
+        "--chunk-size",
         type=int,
         default=0,
         help="The size of batches sent to each process",
@@ -114,11 +115,11 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.debug:
-        max_workers, chunksize = (args.workers or 8, args.batch_size or 720)
+        max_workers, chunksize = (args.workers or 8, args.chunk_size or 720)
     else:
         max_workers, chunksize = (
             args.workers or (os.cpu_count() * 4),
-            args.batch_size or round(16e3),
+            args.chunk_size or round(16e3),
         )
 
     if args.reset_dir:

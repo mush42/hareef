@@ -19,7 +19,10 @@ torch.backends.cudnn.benchmark = False
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        prog="hareef.cbhg.training",
+        description="Training script for hareef.cbhg model."
+    )
     parser.add_argument("--config", dest="config", type=str, required=True)
     parser.add_argument(
         "--reset_dir",

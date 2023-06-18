@@ -19,7 +19,10 @@ torch.backends.cudnn.benchmark = False
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        prog="hareef.cbhg.infer",
+        description="Inference script using Torch or ONNXRuntime"
+    )
     parser.add_argument("--config", dest="config", type=str, required=True)
     parser.add_argument("--text", dest="text", type=str, required=True)
     parser.add_argument("--onnx", type=str)

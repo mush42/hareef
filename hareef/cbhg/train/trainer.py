@@ -11,16 +11,17 @@ from torch.cuda.amp import autocast
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm, trange
 
-from .config_manager import ConfigManager
-from .dataset import load_iterators
-from .diacritizer import TorchCBHGDiacritizer
-from .options import OptimizerType
-from .util.helpers import (categorical_accuracy, count_parameters,
+from ..config_manager import ConfigManager
+from ..dataset import load_iterators
+from ..modules.options import OptimizerType
+from ..infer.diacritizer import TorchCBHGDiacritizer
+from ..util.learning_rates import LearningRateDecay
+from ..util.helpers import (categorical_accuracy, count_parameters,
                            initialize_weights, plot_alignment, repeater)
-from .util.learning_rates import LearningRateDecay
 
 
-class CBHGTrainer(Trainer):
+class CBHGTrainer:
+
     def __init__(self, config_path: str) -> None:
         self.config_path = config_path
         self.config_manager = ConfigManager(config_path)
@@ -33,7 +34,6 @@ class CBHGTrainer(Trainer):
 
         self.config_manager.create_remove_dirs()
         self.text_encoder = self.config_manager.text_encoder
-        self.start_symbol_id = self.text_encoder.start_symbol_id
         self.summary_manager = SummaryWriter(log_dir=self.config_manager.log_dir)
 
         self.model = self.config_manager.get_model()

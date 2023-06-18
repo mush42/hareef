@@ -7,11 +7,9 @@ import numpy as np
 import onnxruntime
 import torch
 
-from .config_manager import ConfigManager
-from .util.constants import HARAQAT
-from .util.text_cleaners import valid_arabic_cleaners
+from hareef.text_cleaners import valid_arabic_cleaner, diacritics_cleaner
 
-HARAQAT_TRANS_DICT = {ord(c): None for c in HARAQAT}
+from ..config_manager import ConfigManager
 
 
 class Diacritizer:
@@ -19,11 +17,11 @@ class Diacritizer:
         self.config_manager = ConfigManager(config_path)
         self.config = self.config_manager.config
         self.text_encoder = self.config_manager.text_encoder
-        self.start_symbol_id = self.text_encoder.start_symbol_id
 
     def diacritize_text(self, text: str):
-        text = valid_arabic_cleaners(text).translate(HARAQAT_TRANS_DICT)
-        seq = [self.start_symbol_id, *self.text_encoder.input_to_sequence(text)]
+        text = diacritics_cleaner(valid_arabic_cleaner(text))
+        seq = self.text_encoder.input_to_sequence(text)
+        start_time = time.perf_counter()
         start_time = time.perf_counter()
         output = self.diacritize_batch(seq)
         print(f"Inference time (ms): {(time.perf_counter() - start_time) * 1000}")
@@ -59,15 +57,14 @@ class TorchCBHGDiacritizer(Diacritizer):
         outputs = self.model(inputs.to(self.device), lengths)
         diacritics = outputs["diacritics"]
         predictions = torch.max(diacritics, 2).indices
-        sentences = []
 
+        sentences = []
         for src, prediction in zip(inputs, predictions):
             sentence = self.text_encoder.combine_text_and_haraqat(
                 list(src.detach().cpu().numpy()),
                 list(prediction.detach().cpu().numpy()),
             )
             sentences.append(sentence)
-
         return sentences
 
 

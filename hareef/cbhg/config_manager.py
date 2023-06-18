@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import json
 import os
 import shutil
 import subprocess
@@ -7,22 +8,19 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict
 
-import ruamel.yaml
 import torch
 
+from hareef.text_encoder import HareefTextEncoder, TextEncoderConfig
+
 from .model import CBHGModel
-from .options import AttentionType, LossType, OptimizerType
-from .util.text_encoders import (ArabicEncoderWithStartSymbol,
-                                 BasicArabicEncoder, TextEncoder)
+from .modules.options import AttentionType, LossType, OptimizerType
 
 
 class ConfigManager:
     def __init__(self, config_path: str):
         self.config_path = Path(config_path)
         model_kind = self.model_kind = "cbhg"
-        self.yaml = ruamel.yaml.YAML()
         self.config: Dict[str, Any] = self._load_config()
-        self.git_hash = self._get_git_hash()
         self.session_name = ".".join(
             [
                 self.config["data_type"],
@@ -41,41 +39,16 @@ class ConfigManager:
         self.prediction_dir = Path(os.path.join(self.base_dir, "predictions"))
         self.plot_dir = Path(os.path.join(self.base_dir, "plots"))
         self.models_dir = Path(os.path.join(self.base_dir, "models"))
-        self.text_encoder: TextEncoder = self.get_text_encoder()
+        encoder_config = TextEncoderConfig(**self.config["text_encoder"])
+        self.text_encoder = HareefTextEncoder(encoder_config)
         self.config["len_input_symbols"] = len(self.text_encoder.input_symbols)
         self.config["len_target_symbols"] = len(self.text_encoder.target_symbols)
         self.config["optimizer"] = OptimizerType[self.config["optimizer_type"]]
 
     def _load_config(self):
-        with open(self.config_path, "rb") as model_yaml:
-            _config = self.yaml.load(model_yaml)
+        with open(self.config_path, "rb") as model_json:
+            _config = json.load(model_json)
         return _config
-
-    @staticmethod
-    def _get_git_hash():
-        try:
-            return (
-                subprocess.check_output(["git", "describe", "--always"])
-                .strip()
-                .decode()
-            )
-        except Exception as e:
-            print(f"WARNING: could not retrieve git hash. {e}")
-
-    def _check_hash(self):
-        try:
-            git_hash = (
-                subprocess.check_output(["git", "describe", "--always"])
-                .strip()
-                .decode()
-            )
-            if self.config["git_hash"] != git_hash:
-                print(
-                    f"""WARNING: git hash mismatch. Current: {git_hash}.
-                    Config hash: {self.config['git_hash']}"""
-                )
-        except Exception as e:
-            print(f"WARNING: could not check git hash. {e}")
 
     @staticmethod
     def _print_dict_values(values, key_name, level=0, tab_size=2):
@@ -96,19 +69,15 @@ class ConfigManager:
         print("\nCONFIGURATION", self.session_name)
         self._print_dictionary(self.config)
 
-    def update_config(self):
-        self.config["git_hash"] = self._get_git_hash()
-
     def dump_config(self):
-        self.update_config()
         _config = {}
         for key, val in self.config.items():
             if isinstance(val, Enum):
                 _config[key] = val.name
             else:
                 _config[key] = val
-        with open(self.base_dir / "config.yml", "w") as model_yaml:
-            self.yaml.dump(_config, model_yaml)
+        with open(self.base_dir / "config.json", "w") as model_json:
+            json.dump(_config, model_json, indent=2)
 
     def create_remove_dirs(
         self,
@@ -174,9 +143,7 @@ class ConfigManager:
         global_step = saved_model["global_step"] + 1
         return model, global_step
 
-    def get_model(self, ignore_hash=False):
-        if not ignore_hash:
-            self._check_hash()
+    def get_model(self):
         return self.get_cbhg()
 
     def get_cbhg(self):
@@ -194,28 +161,6 @@ class ConfigManager:
         )
 
         return model
-
-    def get_text_encoder(self):
-        """Getting the class of TextEncoder from config"""
-        if self.config["text_cleaner"] not in [
-            "basic_cleaners",
-            "valid_arabic_cleaners",
-            None,
-        ]:
-            raise Exception(f"cleaner is not known {self.config['text_cleaner']}")
-
-        if self.config["text_encoder"] == "BasicArabicEncoder":
-            text_encoder = BasicArabicEncoder(cleaner_fn=self.config["text_cleaner"])
-        elif self.config["text_encoder"] == "ArabicEncoderWithStartSymbol":
-            text_encoder = ArabicEncoderWithStartSymbol(
-                cleaner_fn=self.config["text_cleaner"]
-            )
-        else:
-            raise Exception(
-                f"the text encoder is not found {self.config['text_encoder']}"
-            )
-
-        return text_encoder
 
     def get_loss_type(self):
         try:

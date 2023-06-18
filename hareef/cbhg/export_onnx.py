@@ -19,7 +19,10 @@ torch.backends.cudnn.benchmark = False
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        prog="hareef.cbhg.export_onnx",
+        description="Export a model checkpoint to onnx"
+    )
     parser.add_argument("--config", dest="config", type=str, required=True)
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--checkpoint", type=str)
