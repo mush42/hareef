@@ -1,8 +1,8 @@
 {
   "session_name": "base",
-  "data_directory": "data/cbhg",
+  "data_directory": "/content/drive/MyDrive/hareef/data/",
   "data_type": "CA_MSA",
-  "log_directory": "/content/hareef/training/logs",
+  "log_directory": "/content/drive/MyDrive/hareef/training/",
   "load_training_data": true,
   "load_test_data": false,
   "load_validation_data": true,
