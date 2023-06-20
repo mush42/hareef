@@ -35,7 +35,6 @@ class DiacritizationTester(CBHGTrainer):
         self.set_device()
 
         self.text_encoder = self.config_manager.text_encoder
-        self.start_symbol_id = self.text_encoder.start_symbol_id
 
         self.model = self.config_manager.get_model()
 

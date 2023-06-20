@@ -34,50 +34,72 @@ class HareefTextEncoder:
         self.target_symbol_to_id: dict[str, int] = dict(self.config.target_id_map)
         self.target_id_to_symbol: dict[int, str] = {id: char for char, id in self.target_symbol_to_id.items()}
 
+        self.bos = self.config.bos
+        self.eos = self.config.eos
         self.pad = self.config.pad
+
+        self.input_bos_id = self.input_symbol_to_id[self.bos]
+        self.input_eos_id = self.input_symbol_to_id[self.eos]
         self.input_pad_id = self.input_symbol_to_id[self.pad]
+
+        self.target_bos_id = self.target_symbol_to_id[self.bos]
+        self.target_eos_id = self.target_symbol_to_id[self.eos]
         self.target_pad_id = self.target_symbol_to_id[self.pad]
-        self.start_symbol_id = self.target_symbol_to_id[self.config.bos]
+
+        self.meta_input_token_ids = {
+            self.input_bos_id,
+            self.input_eos_id,
+            self.input_pad_id,
+        }
+        self.meta_target_token_ids = {
+            self.target_bos_id,
+            self.target_eos_id,
+            self.target_pad_id,
+        }
 
     def input_to_sequence(self, text: str) -> list[int]:
-        sequence = [self.input_symbol_to_id[s] for s in text if s !=  self.pad]
-        return sequence
+        seq = [self.input_symbol_to_id[s] for s in text if s !=  self.pad]
+        return [self.input_bos_id, *seq, self.input_eos_id]
 
     def target_to_sequence(self, text: str) -> list[int]:
-        sequence = [self.target_symbol_to_id[s] for s in text if s !=  self.pad]
-        return sequence
+        seq = [self.target_symbol_to_id[s] for s in text if s !=  self.pad]
+        return [self.target_bos_id, *seq, self.target_eos_id]
 
     def sequence_to_input(self, sequence: list[int]):
         return [
-            self.input_id_to_symbol[symbol]
-            for symbol in sequence
-            if (symbol in self.input_id_to_symbol) and (symbol !=  self.input_pad_id)
+            self.input_id_to_symbol[symbol_id]
+            for symbol_id in sequence
+            if (symbol_id in self.input_id_to_symbol) and (symbol_id not in self.meta_input_token_ids)
         ]
 
     def sequence_to_target(self, sequence: list[int]):
         return [
-            self.target_id_to_symbol[symbol]
-            for symbol in sequence
-            if (symbol in self.target_id_to_symbol) and (symbol != self.target_pad_id)
+            self.target_id_to_symbol[symbol_id]
+            for symbol_id in sequence
+            if (symbol_id in self.target_id_to_symbol) and (symbol_id not in self.meta_target_token_ids)
         ]
 
     def clean(self, text):
         return valid_arabic_cleaner(text)
 
-    def combine_text_and_haraqat(self, input_ids: list[int], output_ids: list[int]):
+    def combine_text_and_diacritics(self, input_ids: list[int], output_ids: list[int]):
         """
-        Combines the  input text with its corresponding  haraqat
+        Combines the  input text with its corresponding  diacritics
         Args:
-            inputs: a list of ids representing the input text
-            outputs: a list of ids representing the output text
+            input_ids: a list of ids representing the input text
+            output_ids: a list of ids representing the output text
         Returns:
         text: the text after merging the inputs text representation with the output
         representation
         """
         output = ""
-        for i, input_id in enumerate(input_ids):
-            if input_id == self.input_pad_id:
-                break
-            output += self.input_id_to_symbol[input_id]
-            output += self.target_id_to_symbol[output_ids[i]]
-        return output
+        # for i, input_id in enumerate(input_ids):
+        # if input_id == self.input_pad_id:
+        # break
+        return "".join(
+            letter + diac
+            for (letter, diac) in zip(
+                self.sequence_to_input(input_ids),
+                self.sequence_to_target(output_ids)
+            )
+        )

@@ -22,7 +22,6 @@ class Diacritizer:
         text = diacritics_cleaner(valid_arabic_cleaner(text))
         seq = self.text_encoder.input_to_sequence(text)
         start_time = time.perf_counter()
-        start_time = time.perf_counter()
         output = self.diacritize_batch(seq)
         print(f"Inference time (ms): {(time.perf_counter() - start_time) * 1000}")
         return output
@@ -60,7 +59,7 @@ class TorchCBHGDiacritizer(Diacritizer):
 
         sentences = []
         for src, prediction in zip(inputs, predictions):
-            sentence = self.text_encoder.combine_text_and_haraqat(
+            sentence = self.text_encoder.combine_text_and_diacritics(
                 list(src.detach().cpu().numpy()),
                 list(prediction.detach().cpu().numpy()),
             )
@@ -82,7 +81,7 @@ class OnnxCBHGDiacritizer(Diacritizer):
 
         sentences = []
         for src, prediction in zip(inputs, predictions):
-            sentence = self.text_encoder.combine_text_and_haraqat(
+            sentence = self.text_encoder.combine_text_and_diacritics(
                 list(src), list(prediction)
             )
             sentences.append(sentence)

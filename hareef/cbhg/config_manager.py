@@ -78,6 +78,13 @@ class ConfigManager:
                 _config[key] = val
         with open(self.base_dir / "config.json", "w") as model_json:
             json.dump(_config, model_json, indent=2)
+        # needed only for inference
+        infer_config = {
+            "max_len": _config["max_len"],
+            "text_encoder": _config["text_encoder"],
+        }
+        with open(self.base_dir / "inference-config.json", "w", encoding="utf-8") as infer_json:
+            json.dump(infer_config, infer_json, ensure_ascii=False, indent=2)
 
     def create_remove_dirs(
         self,
