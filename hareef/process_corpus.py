@@ -38,7 +38,7 @@ def validate_diacritics(line):
 
 
 def segment_sentences(max_chars, line):
-    return list(_do_segment_sentences(line, max_chars))
+    return [line.strip() for line in _do_segment_sentences(line, max_chars)]
 
 
 def _do_segment_sentences(line, max_chars):
@@ -193,7 +193,7 @@ def main(args):
 
     print("Writing lines to text files...")
     write_lines(output_dir.joinpath("train.txt"), lines)
-    write_lines(output_dir.joinpath("eval.txt"), val_lines)
+    write_lines(output_dir.joinpath("val.txt"), val_lines)
     write_lines(output_dir.joinpath("test.txt"), test_lines)
 
 

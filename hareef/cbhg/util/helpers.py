@@ -1,8 +1,10 @@
 # coding: utf-8
 
+import re
 import os
 from dataclasses import dataclass
 from itertools import repeat
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -11,6 +13,9 @@ import torch
 from torch import nn
 
 from .decorators import ignore_exception
+
+
+CHECKPOINT_RE = re.compile(r"epoch=(?P<epoch>[0-9]+)-step=(?P<step>[0-9]+)")
 
 
 @dataclass
@@ -236,3 +241,27 @@ def make_trg_mask(trg, trg_pad_idx=0):
     # trg_mask = [batch size, 1, trg len, trg len]
 
     return trg_mask
+
+
+def find_last_checkpoint():
+    pl_logs_dir = Path.cwd().joinpath("lightning_logs")
+    last_version= max(
+        int(v.name.split("_")[1])
+        for v in pl_logs_dir.iterdir()
+        if all([
+            v.name.startswith("version_"),
+            v.is_dir(),
+            v.joinpath("checkpoints").exists() and any(v.joinpath("checkpoints").iterdir())
+        ])
+    )
+    checkpoints_dir = pl_logs_dir.joinpath(f"version_{last_version}", "checkpoints")
+    available_checkpoints = [
+        m.groupdict()
+        for m in (CHECKPOINT_RE.match(item.stem) for item in checkpoints_dir.iterdir() if item.is_file())
+        if m is not None
+    ]
+    epoch, step = max(
+        (m["epoch"], m["step"])
+        for m in available_checkpoints
+    )
+    return os.fspath(checkpoints_dir.joinpath(f"epoch={epoch}-step={step}.ckpt")), epoch, step

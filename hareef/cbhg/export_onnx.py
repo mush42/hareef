@@ -7,6 +7,9 @@ from pathlib import Path
 import torch
 
 from .config_manager import ConfigManager
+from .model import CBHGModel
+from .util.helpers import find_last_checkpoint
+
 
 OPSET_VERSION = 15
 
@@ -33,10 +36,15 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
     config = ConfigManager(args.config)
-    model, global_step = config.load_model(args.checkpoint or None)
-    print(f"Loading model at global step: {global_step}")
 
-    model = model.eval()
+    if not args.checkpoint:
+        checkpoint, epoch, step = find_last_checkpoint()
+        model = CBHGModel.load_from_checkpoint(checkpoint, map_location='cpu', config=config)
+        print(f"Loading model at epoch={epoch} - step: {step}")
+    else:
+        model = CBHGModel.load_from_checkpoint(args.checkpoint, map_location='cpu', config=config)
+
+    model.freeze()
 
     inp_vocab_size = config.config["len_input_symbols"]
     dummy_input_length = 50
