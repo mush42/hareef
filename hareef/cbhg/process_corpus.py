@@ -1,17 +1,18 @@
 # coding: utf-8
 
+import logging
 import sys
+
+from ..process_corpus import main as proc_main
+from ..process_corpus import process_corpus_arg_parser
 from .config_manager import ConfigManager
-from ..process_corpus import process_corpus_arg_parser, main as proc_main
 
 
 def main():
+    logging.basicConfig(level=logging.DEBUG)
     parser = process_corpus_arg_parser()
     parser.add_argument(
-        "--config",
-        type=str,
-        required=True,
-        help="Model config to be used"
+        "--config", type=str, required=True, help="Model config to be used"
     )
     args = parser.parse_args()
 
@@ -22,5 +23,5 @@ def main():
     proc_main(args)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

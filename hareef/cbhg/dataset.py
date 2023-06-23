@@ -1,11 +1,14 @@
 # coding: utf-8
 
+import logging
 import os
 
 import pandas as pd
 import torch
 from diacritization_evaluation import util
 from torch.utils.data import DataLoader, Dataset
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class DiacritizationDataset(Dataset):
@@ -118,7 +121,7 @@ def load_training_data(config_manager, loader_parameters):
         training_set, collate_fn=collate_fn, **loader_parameters
     )
 
-    print(f"Length of training iterator = {len(train_iterator)}")
+    _LOGGER.info(f"Length of training iterator = {len(train_iterator)}")
     return train_iterator
 
 
@@ -154,7 +157,7 @@ def load_test_data(config_manager, loader_parameters):
 
     test_iterator = DataLoader(test_dataset, collate_fn=collate_fn, **loader_parameters)
 
-    print(f"Length of test iterator = {len(test_iterator)}")
+    _LOGGER.info(f"Length of test iterator = {len(test_iterator)}")
     return test_iterator
 
 
@@ -196,7 +199,7 @@ def load_validation_data(config_manager, loader_parameters):
         valid_dataset, collate_fn=collate_fn, **loader_parameters
     )
 
-    print(f"Length of valid iterator = {len(valid_iterator)}")
+    _LOGGER.info(f"Length of valid iterator = {len(valid_iterator)}")
     return valid_iterator
 
 
@@ -209,7 +212,9 @@ def load_iterators(config_manager):
         "batch_size": config_manager.config["batch_size"],
         "num_workers": os.cpu_count(),
     }
-    train_iterator = load_training_data(config_manager, loader_parameters={**params, "shuffle": True})
+    train_iterator = load_training_data(
+        config_manager, loader_parameters={**params, "shuffle": True}
+    )
     valid_iterator = load_validation_data(config_manager, loader_parameters=params)
     test_iterator = load_test_data(config_manager, loader_parameters=params)
     return train_iterator, test_iterator, valid_iterator

@@ -2,8 +2,7 @@
 
 import re
 
-from .constants import VALID_ARABIC_CHARS, BASIC_DIACRITICS
-
+from .constants import BASIC_DIACRITICS, VALID_ARABIC_CHARS
 
 _whitespace_re = re.compile(r"\s+")
 
@@ -25,6 +24,4 @@ def valid_arabic_cleaner(text):
 
 
 def diacritics_cleaner(text: str) -> str:
-    return text.translate(
-        str.maketrans('', '', "".join(BASIC_DIACRITICS))
-    )
+    return text.translate(str.maketrans("", "", "".join(BASIC_DIACRITICS)))

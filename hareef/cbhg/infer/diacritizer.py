@@ -7,7 +7,7 @@ import numpy as np
 import onnxruntime
 import torch
 
-from hareef.text_cleaners import valid_arabic_cleaner, diacritics_cleaner
+from hareef.text_cleaners import diacritics_cleaner, valid_arabic_cleaner
 
 
 class Diacritizer:

@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import argparse
+import logging
 import os
 import random
 from concurrent.futures import ProcessPoolExecutor
@@ -12,6 +13,7 @@ from more_itertools import collapse
 
 from .text_cleaners import collapse_whitespace
 
+_LOGGER = logging.getLogger(__name__)
 
 # Order is critical
 SENTENCE_BOUNDRY_PUNCS = [".", "؟", "!", "،", "؛"]
@@ -24,7 +26,7 @@ INVALID_SEQUENCES = {
     "ٍّ": "ٍّ",
     "ٌّ": "ٌّ",
     "ّْ": "ّْ",
-    " .": "."
+    " .": ".",
 }
 
 
@@ -52,7 +54,7 @@ def _do_segment_sentences(line, max_chars):
             if 0 < len(sent) <= max_chars:
                 sent = collapse_whitespace(sent.rstrip())
                 # eliminate very short sentences
-                if sent.count(' ') < 3:
+                if sent.count(" ") < 3:
                     continue
                 yield sent
             else:
@@ -77,7 +79,7 @@ def write_lines(filename, lines):
 def process_corpus_arg_parser():
     parser = argparse.ArgumentParser(
         prog="hareef.cbhg.dataset",
-        description="Make training, validation, and test datasets from given corpus."
+        description="Make training, validation, and test datasets from given corpus.",
     )
     parser.add_argument(
         "corpus",
@@ -86,12 +88,11 @@ def process_corpus_arg_parser():
         help="The corpus text file containing lines of diacritized Arabic text",
     )
     parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="./data",
-        help="Output directory."
+        "--output-dir", type=str, default="./data", help="Output directory."
     )
-    parser.add_argument("--max-chars", type=int, default=400, help="max number of chars per sentence")
+    parser.add_argument(
+        "--max-chars", type=int, default=400, help="max number of chars per sentence"
+    )
     parser.add_argument(
         "--reset-dir",
         action="store_true",
@@ -134,30 +135,30 @@ def main(args):
         )
 
     if args.reset_dir:
-        print("Cleaning output directory...")
+        _LOGGER.info("Cleaning output directory...")
         for file in (f for f in output_dir.iterdir() if f.is_file()):
             file.unlink()
 
-    print("Reading text from corpus...")
+    _LOGGER.info("Reading text from corpus...")
     corp_paths = set(Path(c).resolve() for c in args.corpus)
-    print("\n".join(os.fspath(p) for p in corp_paths))
+    _LOGGER.info("\n".join(os.fspath(p) for p in corp_paths))
     text = "\n".join(corp.read_text(encoding="utf-8").strip() for corp in corp_paths)
-    print("Normalizing corpus...")
+    _LOGGER.info("Normalizing corpus...")
     text = normalize_text(text)
 
     lines = text.splitlines()
 
     if args.n_lines:
-        print(f"Sampling maximom of {args.n_lines} lines from the corpus")
+        _LOGGER.info(f"Sampling maximom of {args.n_lines} lines from the corpus")
         random.shuffle(lines)
-        lines = lines[:args.n_lines]
+        lines = lines[: args.n_lines]
 
-    print("Removing spurious dots at the beginning of lines...")
+    _LOGGER.info("Removing spurious dots at the beginning of lines...")
     lines = [l.lstrip(".") for l in lines]
 
-    print("Splitting lines into sentences")
+    _LOGGER.info("Splitting lines into sentences")
     max_chars = args.max_chars
-    print(f"Maximom length allowed: {max_chars}")
+    _LOGGER.info(f"Maximom length allowed: {max_chars}")
     valid_lines = set(l for l in lines if len(l) <= max_chars)
     invalid_lines = set(lines).difference(valid_lines)
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -165,33 +166,33 @@ def main(args):
             partial(segment_sentences, max_chars), invalid_lines, chunksize=chunksize
         )
     lines = [*valid_lines, *collapse(sents)]
-    print(f"Num sentences: {len(lines)}")
+    _LOGGER.info(f"Num sentences: {len(lines)}")
 
     if args.validate:
-        print("Removing sentences with invalid or no diacritics...")
+        _LOGGER.info("Removing sentences with invalid or no diacritics...")
         total_lines = len(lines)
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             processed_lines = executor.map(
                 validate_diacritics, lines, chunksize=chunksize
             )
         lines = list(filter(None, processed_lines))
-        print(f"Ignored: {total_lines - len(lines)}")
-        print(f"Num valid sentences: {len(lines)}")
+        _LOGGER.info(f"Ignored: {total_lines - len(lines)}")
+        _LOGGER.info(f"Num valid sentences: {len(lines)}")
 
-    print("Shuffling lines")
+    _LOGGER.info("Shuffling lines")
     random.shuffle(lines)
 
     n_lines = len(lines)
 
-    print("Making validation dataset...")
+    _LOGGER.info("Making validation dataset...")
     n_val = args.n_val or round(n_lines * 0.01)
     lines, val_lines = take_sample(lines, n_val)
 
-    print("Making testing dataset...")
+    _LOGGER.info("Making testing dataset...")
     n_test = args.n_test or round(n_lines * 0.05)
     lines, test_lines = take_sample(lines, n_test)
 
-    print("Writing lines to text files...")
+    _LOGGER.info("Writing lines to text files...")
     write_lines(output_dir.joinpath("train.txt"), lines)
     write_lines(output_dir.joinpath("val.txt"), val_lines)
     write_lines(output_dir.joinpath("test.txt"), test_lines)

@@ -7,10 +7,10 @@ from functools import partial
 from pathlib import Path
 from typing import List, Optional
 
-from diacritization_evaluation import der, wer
-from lightning.pytorch import LightningModule
 import more_itertools
 import torch
+from diacritization_evaluation import der, wer
+from lightning.pytorch import LightningModule
 from torch import nn, optim
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -30,7 +30,10 @@ class CBHGModel(LightningModule):
      https://ieeexplore.ieee.org/document/9274427
     """
 
-    def __init__(self, config,):
+    def __init__(
+        self,
+        config,
+    ):
         super().__init__()
         self.automatic_optimization = False
         self.config = config
@@ -50,7 +53,7 @@ class CBHGModel(LightningModule):
             cbhg_filters=self.config["cbhg_filters"],
             cbhg_projections=self.config["cbhg_projections"],
             post_cbhg_layers_units=self.config["post_cbhg_layers_units"],
-            post_cbhg_use_batch_norm=self.config["post_cbhg_use_batch_norm"]
+            post_cbhg_use_batch_norm=self.config["post_cbhg_use_batch_norm"],
         )
 
     def _init_layers(
@@ -165,14 +168,16 @@ class CBHGModel(LightningModule):
         )
         self.training_step_outputs.setdefault("loss", []).append(loss)
         self.training_step_outputs.setdefault("accuracy", []).append(accuracy)
-        self.log('loss', loss)
-        self.log('accuracy', accuracy)
+        self.log("loss", loss)
+        self.log("accuracy", accuracy)
 
         self.manual_backward(loss)
 
         gradient_clip_val = self.config.get("gradient_clip_val")
         if gradient_clip_val:
-            self.clip_gradients(opt, gradient_clip_val=gradient_clip_val, gradient_clip_algorithm="norm")
+            self.clip_gradients(
+                opt, gradient_clip_val=gradient_clip_val, gradient_clip_algorithm="norm"
+            )
 
         opt.step()
 
@@ -207,7 +212,9 @@ class CBHGModel(LightningModule):
     def test_step(self, batch, batch_idx):
         metrics = self.validation_step(batch, batch_idx)
         self.test_step_outputs.setdefault("test_loss", []).append(metrics["val_loss"])
-        self.test_step_outputs.setdefault("test_accuracy", []).append(metrics["val_accuracy"])
+        self.test_step_outputs.setdefault("test_accuracy", []).append(
+            metrics["val_accuracy"]
+        )
         return metrics
 
     def configure_optimizers(self):
@@ -217,11 +224,13 @@ class CBHGModel(LightningModule):
             betas=(self.config["adam_beta1"], self.config["adam_beta2"]),
             weight_decay=self.config["weight_decay"],
         )
-        # self.scheduler = LambdaLR(
-        # optimizer,
-        # partial(adjust_learning_rate, optimizer)
-        # )
-        self.scheduler = self.get_lr_scheduler(optimizer, self.config["warmup_steps"], self.config["max_epoches"], min_lr=0)
+        self.scheduler = LambdaLR(
+            optimizer,
+            partial(adjust_learning_rate, optimizer)
+        )
+        #self.scheduler = self.get_lr_scheduler(
+        #    optimizer, self.config["warmup_steps"], self.config["max_epoches"], min_lr=0
+        #)
         return [optimizer], [self.scheduler]
 
     def on_train_epoch_end(self):
@@ -229,7 +238,9 @@ class CBHGModel(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self._log_epoch_metrics(self.val_step_outputs)
-        if (self.current_epoch + 1) % self.config["evaluate_with_error_rates_epoches"] == 0:
+        if (self.current_epoch + 1) % self.config[
+            "evaluate_with_error_rates_epoches"
+        ] == 0:
             self.evaluate_with_error_rates()
 
     def on_test_epoch_end(self) -> None:
@@ -268,9 +279,7 @@ class CBHGModel(LightningModule):
         with open(orig_path, "w", encoding="utf8") as file:
             lines = "\n".join(sent for sent in all_orig)
             file.write(lines)
-        predicted_path = os.path.join(
-            predictions_dir, f"predicted.txt"
-        )
+        predicted_path = os.path.join(predictions_dir, f"predicted.txt")
         with open(predicted_path, "w", encoding="utf8") as file:
             lines = "\n".join(sent for sent in all_predicted)
             file.write(lines)
@@ -285,14 +294,11 @@ class CBHGModel(LightningModule):
             )
         except:
             _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
-            results = {
-                "DER": 0.0,
-                "DER*": 0.0,
-                "WER": 0.0,
-                "WER*": 0.0
-            }
+            results = {"DER": 0.0, "DER*": 0.0, "WER": 0.0, "WER*": 0.0}
         num_examples = self.config["n_predicted_text_tensorboard"]
-        for (i, (org, pred)) in enumerate(more_itertools.take(num_examples, zip(all_orig, all_predicted))):
+        for i, (org, pred) in enumerate(
+            more_itertools.take(num_examples, zip(all_orig, all_predicted))
+        ):
             self.logger.experiment.add_text(f"eval-text/{i}", f"{org} |->  {pred}")
         return results
 
@@ -317,9 +323,10 @@ class CBHGModel(LightningModule):
                 return float(current_step) / float(max(1, warmup_steps))
             else:
                 # Cosine learning rate decay
-                progress = float(current_step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+                progress = float(current_step - warmup_steps) / float(
+                    max(1, total_steps - warmup_steps)
+                )
                 return max(min_lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
 
         scheduler = LambdaLR(optimizer, lr_lambda)
         return scheduler
-

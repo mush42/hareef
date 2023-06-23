@@ -4,9 +4,8 @@ import dataclasses
 import typing
 from typing import Optional
 
-from .text_cleaners import valid_arabic_cleaner
 from .constants import ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS, PUNCTUATIONS
-
+from .text_cleaners import valid_arabic_cleaner
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -16,7 +15,6 @@ class TextEncoderConfig:
     pad: str
     input_id_map: dict[str, int]
     target_id_map: dict[str, int]
-
 
 
 class HareefTextEncoder:
@@ -29,10 +27,14 @@ class HareefTextEncoder:
         self.target_symbols: list[str] = list(self.config.target_id_map.keys())
 
         self.input_symbol_to_id: dict[str, int] = dict(self.config.input_id_map)
-        self.input_id_to_symbol: dict[int, str] = {id: char for char, id in self.input_symbol_to_id.items()}
+        self.input_id_to_symbol: dict[int, str] = {
+            id: char for char, id in self.input_symbol_to_id.items()
+        }
 
         self.target_symbol_to_id: dict[str, int] = dict(self.config.target_id_map)
-        self.target_id_to_symbol: dict[int, str] = {id: char for char, id in self.target_symbol_to_id.items()}
+        self.target_id_to_symbol: dict[int, str] = {
+            id: char for char, id in self.target_symbol_to_id.items()
+        }
 
         self.bos = self.config.bos
         self.eos = self.config.eos
@@ -58,25 +60,27 @@ class HareefTextEncoder:
         }
 
     def input_to_sequence(self, text: str) -> list[int]:
-        seq = [self.input_symbol_to_id[s] for s in text if s !=  self.pad]
+        seq = [self.input_symbol_to_id[s] for s in text if s != self.pad]
         return [self.input_bos_id, *seq, self.input_eos_id]
 
     def target_to_sequence(self, text: str) -> list[int]:
-        seq = [self.target_symbol_to_id[s] for s in text if s !=  self.pad]
+        seq = [self.target_symbol_to_id[s] for s in text if s != self.pad]
         return [self.target_bos_id, *seq, self.target_eos_id]
 
     def sequence_to_input(self, sequence: list[int]):
         return [
             self.input_id_to_symbol[symbol_id]
             for symbol_id in sequence
-            if (symbol_id in self.input_id_to_symbol) and (symbol_id not in self.meta_input_token_ids)
+            if (symbol_id in self.input_id_to_symbol)
+            and (symbol_id not in self.meta_input_token_ids)
         ]
 
     def sequence_to_target(self, sequence: list[int]):
         return [
             self.target_id_to_symbol[symbol_id]
             for symbol_id in sequence
-            if (symbol_id in self.target_id_to_symbol) and (symbol_id not in self.meta_target_token_ids)
+            if (symbol_id in self.target_id_to_symbol)
+            and (symbol_id not in self.meta_target_token_ids)
         ]
 
     def clean(self, text):
@@ -95,7 +99,6 @@ class HareefTextEncoder:
         return "".join(
             letter + diac
             for (letter, diac) in zip(
-                self.sequence_to_input(input_ids),
-                self.sequence_to_target(output_ids)
+                self.sequence_to_input(input_ids), self.sequence_to_target(output_ids)
             )
         )

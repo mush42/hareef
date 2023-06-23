@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -11,13 +12,17 @@ from typing import Any, Dict
 import torch
 
 from hareef.text_encoder import HareefTextEncoder, TextEncoderConfig
+
 from .modules.options import AttentionType, LossType, OptimizerType
+
+_LOGGER = logging.getLogger(__package__)
 
 
 class ConfigManager:
     """Model configuration."""
 
     def __init__(self, config_path: str):
+        _LOGGER.info(f"Using config: `{config_path}`")
         self.config_path = Path(config_path)
         model_kind = self.model_kind = "cbhg"
         self.config: Dict[str, Any] = self._load_config()

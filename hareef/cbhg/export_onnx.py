@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import argparse
+import logging
 import random
 from pathlib import Path
 
@@ -11,14 +12,15 @@ from .config_manager import ConfigManager
 from .model import CBHGModel
 from .util.helpers import find_last_checkpoint
 
-
+_LOGGER = logging.getLogger(__name__)
 OPSET_VERSION = 15
 
 
 def main():
+    logging.basicConfig(level=logging.DEBUG)
+
     parser = argparse.ArgumentParser(
-        prog="hareef.cbhg.export_onnx",
-        description="Export a model checkpoint to onnx"
+        prog="hareef.cbhg.export_onnx", description="Export a model checkpoint to onnx"
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
     parser.add_argument("--seed", type=int, default=1234, help="random seed")
@@ -41,12 +43,16 @@ def main():
 
     if not args.checkpoint:
         checkpoint_filename, epoch, step = find_last_checkpoint()
-        model = CBHGModel.load_from_checkpoint(checkpoint_filename, map_location='cpu', config=config)
-        print(f"Using checkpoint from: epoch={epoch} - step={step}")
-        print(f"file: {checkpoint_filename}")
+        model = CBHGModel.load_from_checkpoint(
+            checkpoint_filename, map_location="cpu", config=config
+        )
+        _LOGGER.info(f"Using checkpoint from: epoch={epoch} - step={step}")
+        _LOGGER.info(f"file: {checkpoint_filename}")
     else:
-        model = CBHGModel.load_from_checkpoint(args.checkpoint, map_location='cpu', config=config)
-        print(f"file: {args.checkpoint}")
+        model = CBHGModel.load_from_checkpoint(
+            args.checkpoint, map_location="cpu", config=config
+        )
+        _LOGGER.info(f"file: {args.checkpoint}")
 
     model.freeze()
 
@@ -79,7 +85,7 @@ def main():
             "output": {0: "batch_size", 1: "diacritics"},
         },
     )
-    print(f"Exported model to: {args.output}")
+    _LOGGER.info(f"Exported model to: {args.output}")
 
 
 if __name__ == "__main__":
