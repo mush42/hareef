@@ -9,47 +9,40 @@ import torch
 
 from hareef.text_cleaners import valid_arabic_cleaner, diacritics_cleaner
 
-from ..config_manager import ConfigManager
-
 
 class Diacritizer:
-    def __init__(self, config_path: str) -> None:
-        self.config_manager = ConfigManager(config_path)
-        self.config = self.config_manager.config
-        self.text_encoder = self.config_manager.text_encoder
+    """Base diacritizer."""
+
+    def __init__(self, config) -> None:
+        self.config = config
+        self.text_encoder = self.config.text_encoder
 
     def diacritize_text(self, text: str):
         text = diacritics_cleaner(valid_arabic_cleaner(text))
         seq = self.text_encoder.input_to_sequence(text)
         start_time = time.perf_counter()
         output = self.diacritize_batch(seq)
-        print(f"Inference time (ms): {(time.perf_counter() - start_time) * 1000}")
-        return output
+        return output, (time.perf_counter() - start_time) * 1000
 
     def diacritize_batch(self, batch):
         raise NotImplementedError
 
 
 class TorchCBHGDiacritizer(Diacritizer):
-    def __init__(self, *args, load_model: bool = False, **kwargs) -> None:
+    """Use `torch` for inference."""
+
+    def __init__(self, *args, model=None, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.load_model = load_model
+        if model is not None:
+            self.set_model(model)
 
     def set_model(self, model):
         self.model = model
+        self.device = model.device
 
     def diacritize_batch(self, batch):
-        if self.config.get("device"):
-            self.device = self.config["device"]
-        else:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        if self.load_model:
-            self.model, self.global_step = self.config_manager.load_model()
-            self.model = self.model.to(self.device)
-
-        self.model.eval()
-
+        if self.model is None:
+            raise RuntimeError("Called `diacritize_batch` without setting the `model`")
         batch = torch.LongTensor([batch]).to(self.device)
         inputs = batch.data
         lengths = torch.tensor([batch.shape[1]], dtype=torch.int64).to("cpu")

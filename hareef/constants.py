@@ -42,8 +42,8 @@ BASIC_DIACRITICS = {
 }
 
 
+WORD_SEPARATOR = chr(0x20)
 ARABIC_LETTERS = frozenset({chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))})
 PUNCTUATIONS = frozenset({".", "،", ":", "؛", "-", "؟", "!"})
-WORD_SEPARATOR = ' '
 ALL_POSSIBLE_DIACRITICS = {m.value for m in ArabicDiacritics}
 VALID_ARABIC_CHARS = {WORD_SEPARATOR, *ARABIC_LETTERS, *BASIC_DIACRITICS, *PUNCTUATIONS}

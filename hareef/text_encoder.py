@@ -92,10 +92,6 @@ class HareefTextEncoder:
         text: the text after merging the inputs text representation with the output
         representation
         """
-        output = ""
-        # for i, input_id in enumerate(input_ids):
-        # if input_id == self.input_pad_id:
-        # break
         return "".join(
             letter + diac
             for (letter, diac) in zip(

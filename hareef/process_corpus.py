@@ -38,7 +38,7 @@ def validate_diacritics(line):
 
 
 def segment_sentences(max_chars, line):
-    return list(_do_segment_sentences(line, max_chars))
+    return [line.strip() for line in _do_segment_sentences(line, max_chars)]
 
 
 def _do_segment_sentences(line, max_chars):
@@ -98,9 +98,9 @@ def process_corpus_arg_parser():
         help="deletes everything under the output directory.",
     )
     parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="apply transformations to a subset of the corpus for testing",
+        "--n-lines",
+        type=int,
+        help="apply transformations to a subset of the corpus. Useful for development",
     )
     parser.add_argument(
         "--validate",
@@ -125,7 +125,7 @@ def main(args):
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.debug:
+    if not args.n_lines or (args.n_lines > 25000):
         max_workers, chunksize = (args.workers or 8, args.chunk_size or 720)
     else:
         max_workers, chunksize = (
@@ -147,10 +147,10 @@ def main(args):
 
     lines = text.splitlines()
 
-    if args.debug:
-        print("debug is on. Sampling 5000 lines from the corpus")
+    if args.n_lines:
+        print(f"Sampling maximom of {args.n_lines} lines from the corpus")
         random.shuffle(lines)
-        lines = lines[:5000]
+        lines = lines[:args.n_lines]
 
     print("Removing spurious dots at the beginning of lines...")
     lines = [l.lstrip(".") for l in lines]
@@ -193,7 +193,7 @@ def main(args):
 
     print("Writing lines to text files...")
     write_lines(output_dir.joinpath("train.txt"), lines)
-    write_lines(output_dir.joinpath("eval.txt"), val_lines)
+    write_lines(output_dir.joinpath("val.txt"), val_lines)
     write_lines(output_dir.joinpath("test.txt"), test_lines)
 
 

@@ -7,15 +7,13 @@ import torch
 from diacritization_evaluation import util
 from torch.utils.data import DataLoader, Dataset
 
-from .config_manager import ConfigManager
-
 
 class DiacritizationDataset(Dataset):
     """
     The diacritization dataset
     """
 
-    def __init__(self, config_manager: ConfigManager, list_ids, data):
+    def __init__(self, config_manager, list_ids, data):
         "Initialization"
         self.list_ids = list_ids
         self.data = data
@@ -81,7 +79,7 @@ def collate_fn(data):
     return batch
 
 
-def load_training_data(config_manager: ConfigManager, loader_parameters):
+def load_training_data(config_manager, loader_parameters):
     """
     Loading the training data using pandas
     """
@@ -124,7 +122,7 @@ def load_training_data(config_manager: ConfigManager, loader_parameters):
     return train_iterator
 
 
-def load_test_data(config_manager: ConfigManager, loader_parameters):
+def load_test_data(config_manager, loader_parameters):
     """
     Loading the test data using pandas
     """
@@ -160,7 +158,7 @@ def load_test_data(config_manager: ConfigManager, loader_parameters):
     return test_iterator
 
 
-def load_validation_data(config_manager: ConfigManager, loader_parameters):
+def load_validation_data(config_manager, loader_parameters):
     """
     Loading the validation data using pandas
     """
@@ -169,7 +167,7 @@ def load_validation_data(config_manager: ConfigManager, loader_parameters):
         return []
 
     if config_manager.config["is_data_preprocessed"]:
-        path = os.path.join(config_manager.data_dir, "eval.csv")
+        path = os.path.join(config_manager.data_dir, "val.csv")
         valid_data = pd.read_csv(
             path,
             encoding="utf-8",
@@ -183,7 +181,7 @@ def load_validation_data(config_manager: ConfigManager, loader_parameters):
             config_manager, valid_data.index, valid_data
         )
     else:
-        path = os.path.join(config_manager.data_dir, "eval.txt")
+        path = os.path.join(config_manager.data_dir, "val.txt")
         with open(path, encoding="utf8") as file:
             valid_data = file.readlines()
 
@@ -202,17 +200,16 @@ def load_validation_data(config_manager: ConfigManager, loader_parameters):
     return valid_iterator
 
 
-def load_iterators(config_manager: ConfigManager):
+def load_iterators(config_manager):
     """
     Load the data iterators
     Args:
     """
     params = {
         "batch_size": config_manager.config["batch_size"],
-        "shuffle": True,
-        "num_workers": 2,
+        "num_workers": os.cpu_count(),
     }
-    train_iterator = load_training_data(config_manager, loader_parameters=params)
+    train_iterator = load_training_data(config_manager, loader_parameters={**params, "shuffle": True})
     valid_iterator = load_validation_data(config_manager, loader_parameters=params)
     test_iterator = load_test_data(config_manager, loader_parameters=params)
     return train_iterator, test_iterator, valid_iterator
