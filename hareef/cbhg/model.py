@@ -32,11 +32,14 @@ class CBHGModel(LightningModule):
 
     def __init__(self, config,):
         super().__init__()
+        self.automatic_optimization = False
         self.config = config
         self.text_encoder = self.config.text_encoder
         self.pad_idx = self.config.text_encoder.input_pad_id
         self.criterion = nn.CrossEntropyLoss(ignore_index=self.pad_idx)
         self.training_step_outputs = {}
+        self.val_step_outputs = {}
+        self.test_step_outputs = {}
         self._init_layers(
             embedding_dim=self.config["embedding_dim"],
             inp_vocab_size=self.config["len_input_symbols"],
@@ -141,6 +144,9 @@ class CBHGModel(LightningModule):
         return output
 
     def training_step(self, batch, batch_idx):
+        opt = self.optimizers()
+        opt.zero_grad()
+
         batch["src"] = batch["src"].to(self.device)
         batch["lengths"] = batch["lengths"].to("cpu")
         batch["target"] = batch["target"].to(self.device)
@@ -154,17 +160,27 @@ class CBHGModel(LightningModule):
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = targets.view(-1)
         loss = self.criterion(predictions.to(self.device), targets.to(self.device))
-        self.training_step_outputs.setdefault("loss", []).append(loss)
         accuracy = categorical_accuracy(
             predictions, targets.to(self.device), self.pad_idx
         )
+        self.training_step_outputs.setdefault("loss", []).append(loss)
         self.training_step_outputs.setdefault("accuracy", []).append(accuracy)
-        outputs.update({"loss": loss, "accuracy": accuracy})
         self.log('loss', loss)
         self.log('accuracy', accuracy)
-        return outputs
+
+        self.manual_backward(loss)
+
+        gradient_clip_val = self.config.get("gradient_clip_val")
+        if gradient_clip_val:
+            self.clip_gradients(opt, gradient_clip_val=gradient_clip_val, gradient_clip_algorithm="norm")
+
+        opt.step()
+
+        sch = self.lr_schedulers()
+        sch.step()
 
     def validation_step(self, batch, batch_idx):
+        self.freeze()
         batch["src"] = batch["src"].to(self.device)
         batch["lengths"] = batch["lengths"].to("cpu")
         batch["target"] = batch["target"].to(self.device)
@@ -177,19 +193,22 @@ class CBHGModel(LightningModule):
         targets = batch["target"].contiguous()
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = targets.view(-1)
-        loss = self.criterion(predictions.to(self.device), targets.to(self.device))
-        acc = categorical_accuracy(
+        val_loss = self.criterion(predictions.to(self.device), targets.to(self.device))
+        val_accuracy = categorical_accuracy(
             predictions, targets.to(self.device), self.pad_idx
         )
-        info = {
-            "loss": loss.item(),
-            "accuracy": acc.item()
-        }
-        self.log_dict(info)
-        return info
+        self.val_step_outputs.setdefault("val_loss", []).append(val_loss)
+        self.val_step_outputs.setdefault("val_accuracy", []).append(val_accuracy)
+        self.log("val_loss", val_loss)
+        self.log("val_accuracy", val_accuracy)
+        self.unfreeze()
+        return {"val_loss": val_loss, "val_accuracy": val_accuracy}
 
     def test_step(self, batch, batch_idx):
-        return self.validation_step(batch, batch_idx)
+        metrics = self.validation_step(batch, batch_idx)
+        self.test_step_outputs.setdefault("test_loss", []).append(metrics["val_loss"])
+        self.test_step_outputs.setdefault("test_accuracy", []).append(metrics["val_accuracy"])
+        return metrics
 
     def configure_optimizers(self):
         optimizer = optim.Adam(
@@ -206,19 +225,22 @@ class CBHGModel(LightningModule):
         return [optimizer], [self.scheduler]
 
     def on_train_epoch_end(self):
-        epoch_loss_mean = torch.stack(self.training_step_outputs["loss"]).mean()
-        epoch_accuracy_mean = torch.stack(self.training_step_outputs["accuracy"]).mean()
-        self.log_dict({
-            "epoch_loss_mean": epoch_loss_mean,
-            "epoch_accuracy_mean": epoch_accuracy_mean
-        })
-        for val in  self.training_step_outputs.values():
-            val.clear()
-        if self.current_epoch % self.config["evaluate_with_error_rates_epoches"] == 0:
+        self._log_epoch_metrics(self.training_step_outputs)
+
+    def on_validation_epoch_end(self) -> None:
+        self._log_epoch_metrics(self.val_step_outputs)
+        if (self.current_epoch + 1) % self.config["evaluate_with_error_rates_epoches"] == 0:
             self.evaluate_with_error_rates()
 
     def on_test_epoch_end(self) -> None:
+        self._log_epoch_metrics(self.test_step_outputs)
         self.evaluate_with_error_rates(is_test=True)
+
+    def _log_epoch_metrics(self, metrics):
+        for name, values in metrics.items():
+            epoch_metric_mean = torch.stack(values).mean()
+            self.log(name, epoch_metric_mean)
+            values.clear()
 
     def evaluate_with_error_rates(self, is_test=False):
         if is_test:

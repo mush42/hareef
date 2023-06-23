@@ -1,13 +1,15 @@
 # coding: utf-8
 
 import argparse
+import functools
 import logging
 import random
 
 import numpy as np
 import torch
 from lightning import Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
 from .config_manager import ConfigManager
 from .dataset import load_iterators
@@ -39,28 +41,46 @@ def main():
     torch.backends.cudnn.benchmark = False
 
     config = ConfigManager(args.config)
+    model = CBHGModel(config)
 
-    precision = "16-mixed" if config.config["use_mixed_precision"] else 32
     checkpoint_save_callback = ModelCheckpoint(
         every_n_train_steps=config["model_save_steps"],
         every_n_epochs=config["model_save_epoches"]
     )
+    loss_early_stop_callback = EarlyStopping(
+        monitor="val_loss",
+        min_delta=0.00,
+        patience=5,
+        mode="min",
+        strict=True
+    )
+    accuracy_early_stop_callback = EarlyStopping(
+        monitor="val_accuracy",
+        min_delta=0.00,
+        patience=5,
+        stopping_threshold=0.99,
+        mode="max",
+        strict=True
+    )
+    if config.config["use_mixed_precision"]:
+        mp = (
+            MixedPrecisionPlugin("16-mixed", device='cuda', scaler=torch.cuda.amp.GradScaler())
+            if args.accelerator == 'gpu'
+            else MixedPrecisionPlugin("bf16-mixed", device='cpu')
+        )
+        plugins = [mp,]
     trainer = Trainer(
         accelerator=args.accelerator,
         devices=args.devices,
-        precision=precision,
         check_val_every_n_epoch=config.config["evaluate_epoches"],
-        callbacks = [checkpoint_save_callback,],
+        callbacks = [loss_early_stop_callback, accuracy_early_stop_callback, checkpoint_save_callback,],
+        plugins=plugins,
         max_epochs=config.config["max_epoches"],
         enable_progress_bar=True,
         enable_model_summary=True,
-        gradient_clip_val=config.get("gradient_clip_val"),
-        gradient_clip_algorithm="norm",
         fast_dev_run=args.debug,
         log_every_n_steps=10
     )
-
-    model = CBHGModel(config)
 
     if args.test:
         config.config["load_test_data"] = True

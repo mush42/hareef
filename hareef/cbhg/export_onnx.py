@@ -4,6 +4,7 @@ import argparse
 import random
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from .config_manager import ConfigManager
@@ -13,13 +14,6 @@ from .util.helpers import find_last_checkpoint
 
 OPSET_VERSION = 15
 
-SEED = 1234
-random.seed(SEED)
-torch.manual_seed(SEED)
-torch.cuda.manual_seed(SEED)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -27,10 +21,18 @@ def main():
         description="Export a model checkpoint to onnx"
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
+    parser.add_argument("--seed", type=int, default=1234, help="random seed")
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--checkpoint", type=str)
 
     args = parser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     args.output = Path(args.output)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -38,11 +40,13 @@ def main():
     config = ConfigManager(args.config)
 
     if not args.checkpoint:
-        checkpoint, epoch, step = find_last_checkpoint()
-        model = CBHGModel.load_from_checkpoint(checkpoint, map_location='cpu', config=config)
-        print(f"Loading model at epoch={epoch} - step: {step}")
+        checkpoint_filename, epoch, step = find_last_checkpoint()
+        model = CBHGModel.load_from_checkpoint(checkpoint_filename, map_location='cpu', config=config)
+        print(f"Using checkpoint from: epoch={epoch} - step={step}")
+        print(f"file: {checkpoint_filename}")
     else:
         model = CBHGModel.load_from_checkpoint(args.checkpoint, map_location='cpu', config=config)
+        print(f"file: {args.checkpoint}")
 
     model.freeze()
 
