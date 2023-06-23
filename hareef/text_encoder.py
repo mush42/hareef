@@ -2,14 +2,14 @@
 
 import dataclasses
 import typing
-from typing import Optional
+from typing import Optional, Any
 
 from .constants import ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS, PUNCTUATIONS
 from .text_cleaners import valid_arabic_cleaner
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class TextEncoderConfig:
+class TokenConfig:
     bos: str
     eos: str
     pad: str
@@ -20,7 +20,7 @@ class TextEncoderConfig:
 class HareefTextEncoder:
     """Clean text, prepare input, and convert output."""
 
-    def __init__(self, config: TextEncoderConfig):
+    def __init__(self, config: TokenConfig):
         self.config = config
 
         self.input_symbols: list[str] = list(self.config.input_id_map.keys())
@@ -102,3 +102,13 @@ class HareefTextEncoder:
                 self.sequence_to_input(input_ids), self.sequence_to_target(output_ids)
             )
         )
+
+    def dump_tokens(self) -> dict[Any, Any]:
+        data = {
+            "pad": self.config.pad,
+            "bos": self.config.bos,
+            "eos": self.config.eos,
+            "input_id_map": dict(self.input_symbol_to_id),
+            "target_id_map": dict(self.target_symbol_to_id)
+        }
+        return {"text_encoder": data}

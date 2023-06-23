@@ -2,8 +2,10 @@
 
 import argparse
 import functools
+import json
 import logging
 import random
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -112,8 +114,18 @@ def main():
         __, test_loader, __ = load_iterators(config)
         trainer.test(model, test_loader)
     else:
-        _LOGGER.info("Training loop starting...")
         train_loader, __, val_loader = load_iterators(config)
+        inference_config_path = Path(trainer.log_dir).joinpath("inference-config.json")
+        inference_config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
+            json.dump(
+                config.text_encoder.dump_tokens(),
+                file,
+                ensure_ascii=False,
+                indent=2
+            )
+        _LOGGER.info(f"Writing inference config to file: `{inference_config_path}`")
+        _LOGGER.info("Training loop starting...")
         trainer.fit(model, train_loader, val_loader)
 
 

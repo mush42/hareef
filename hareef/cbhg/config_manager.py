@@ -11,7 +11,8 @@ from typing import Any, Dict
 
 import torch
 
-from hareef.text_encoder import HareefTextEncoder, TextEncoderConfig
+from hareef.constants import DEFAULT_TOKEN_MAP
+from hareef.text_encoder import HareefTextEncoder, TokenConfig
 
 from .modules.options import AttentionType, LossType, OptimizerType
 
@@ -37,7 +38,7 @@ class ConfigManager:
         self.data_dir = Path(
             os.path.join(self.config["data_directory"], self.config["data_type"])
         )
-        encoder_config = TextEncoderConfig(**self.config["text_encoder"])
+        encoder_config = TokenConfig(**DEFAULT_TOKEN_MAP)
         self.text_encoder = HareefTextEncoder(encoder_config)
         self.config["len_input_symbols"] = len(self.text_encoder.input_symbols)
         self.config["len_target_symbols"] = len(self.text_encoder.target_symbols)
