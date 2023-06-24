@@ -2,7 +2,6 @@
 
 import os
 import re
-from dataclasses import dataclass
 from itertools import repeat
 from pathlib import Path
 from typing import Any
@@ -12,27 +11,11 @@ import numpy as np
 import torch
 from torch import nn
 
-from .decorators import ignore_exception
 
 CHECKPOINT_RE = re.compile(r"epoch=(?P<epoch>[0-9]+)-step=(?P<step>[0-9]+)")
 
 
-@dataclass
-class ErrorRate:
-    wer: float
-    der: float
-    wer_without_case_ending: float
-    der_without_case_ending: float
 
-
-def epoch_time(start_time, end_time):
-    elapsed_time = end_time - start_time
-    elapsed_mins = int(elapsed_time / 60)
-    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
-    return elapsed_mins, elapsed_secs
-
-
-@ignore_exception
 def plot_alignment(alignment: torch.Tensor, path: str, global_step: Any = 0):
     """
     Plot alignment and save it into a path
@@ -164,9 +147,9 @@ def positional_encoding(position, model_dim):
     return torch.from_numpy(pos_encoding)
 
 
-def calculate_error_rates(original_file_path: str, target_file_path: str) -> ErrorRate:
+def calculate_error_rates(original_file_path: str, target_file_path: str) -> dict[str, float]:
     """
-    Calculates ErrorRates from paths
+    Calculates der/wer error rates from paths
     """
     assert os.path.isfile(original_file_path)
     assert os.path.isfile(target_file_path)
@@ -187,14 +170,12 @@ def calculate_error_rates(original_file_path: str, target_file_path: str) -> Err
         inp_path=original_file_path, out_path=target_file_path, case_ending=False
     )
 
-    error_rates = ErrorRate(
-        _wer,
-        _der,
-        _wer_without_case_ending,
-        _der_without_case_ending,
-    )
-
-    return error_rates
+    return {
+        "WER": _wer,
+        "DER": _der,
+        "WER*": _wer_without_case_ending,
+        "DER*": _der_without_case_ending,
+    }
 
 
 def categorical_accuracy(preds, y, tag_pad_idx, device="cuda"):
@@ -208,14 +189,6 @@ def categorical_accuracy(preds, y, tag_pad_idx, device="cuda"):
     correct = max_preds[non_pad_elements].squeeze(1).eq(y[non_pad_elements])
     return correct.sum() / torch.FloatTensor([y[non_pad_elements].shape[0]]).to(device)
 
-
-def write_to_files(input_path, output_path, input_list, output_list):
-    with open(input_path, "w", encoding="utf8") as file:
-        for inp in input_list:
-            file.write(inp + "\n")
-    with open(output_path, "w", encoding="utf8") as file:
-        for out in output_list:
-            file.write(out + "\n")
 
 
 def make_src_mask(src: torch.Tensor, pad_idx=0):
@@ -242,8 +215,8 @@ def make_trg_mask(trg, trg_pad_idx=0):
     return trg_mask
 
 
-def find_last_checkpoint():
-    pl_logs_dir = Path.cwd().joinpath("lightning_logs")
+def find_last_checkpoint(logs_root_directory):
+    pl_logs_dir = Path(logs_root_directory).joinpath("lightning_logs")
     last_version = max(
         int(v.name.split("_")[1])
         for v in pl_logs_dir.iterdir()

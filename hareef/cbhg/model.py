@@ -1,7 +1,6 @@
 # coding: utf-8
 
 import logging
-import math
 import os
 from functools import partial
 from pathlib import Path
@@ -12,14 +11,13 @@ import torch
 from diacritization_evaluation import der, wer
 from lightning.pytorch import LightningModule
 from torch import nn, optim
-from torch.optim.lr_scheduler import LambdaLR
 
-from .dataset import load_iterators
-from .infer.diacritizer import TorchCBHGDiacritizer
+from hareef.learning_rates import cosine_decay_lr_scheduler
+from hareef.utils import categorical_accuracy, calculate_error_rates
+from .dataset import load_validation_data, load_test_data
+from .diacritizer import TorchCBHGDiacritizer
 from .modules.options import OptimizerType
 from .modules.tacotron_modules import CBHG, Prenet
-from .util.helpers import categorical_accuracy
-from .util.learning_rates import adjust_learning_rate
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -30,10 +28,7 @@ class CBHGModel(LightningModule):
      https://ieeexplore.ieee.org/document/9274427
     """
 
-    def __init__(
-        self,
-        config,
-    ):
+    def __init__(self, config):
         super().__init__()
         self.automatic_optimization = False
         self.config = config
@@ -148,6 +143,8 @@ class CBHGModel(LightningModule):
 
     def training_step(self, batch, batch_idx):
         opt = self.optimizers()
+        sch = self.lr_schedulers()
+
         opt.zero_grad()
 
         batch["src"] = batch["src"].to(self.device)
@@ -180,8 +177,6 @@ class CBHGModel(LightningModule):
             )
 
         opt.step()
-
-        sch = self.lr_schedulers()
         sch.step()
 
     def validation_step(self, batch, batch_idx):
@@ -224,13 +219,9 @@ class CBHGModel(LightningModule):
             betas=(self.config["adam_beta1"], self.config["adam_beta2"]),
             weight_decay=self.config["weight_decay"],
         )
-        self.scheduler = LambdaLR(
-            optimizer,
-            partial(adjust_learning_rate, optimizer)
+        self.scheduler = cosine_decay_lr_scheduler(
+           optimizer, self.config["warmup_steps"], self.config["max_epoches"], min_lr=0.0
         )
-        #self.scheduler = self.get_lr_scheduler(
-        #    optimizer, self.config["warmup_steps"], self.config["max_epoches"], min_lr=0
-        #)
         return [optimizer], [self.scheduler]
 
     def on_train_epoch_end(self):
@@ -241,11 +232,13 @@ class CBHGModel(LightningModule):
         if (self.current_epoch + 1) % self.config[
             "evaluate_with_error_rates_epoches"
         ] == 0:
-            self.evaluate_with_error_rates()
+            data_loader = load_validation_data(self.config)
+            self._evaluate_with_error_rates(data_loader)
 
     def on_test_epoch_end(self) -> None:
         self._log_epoch_metrics(self.test_step_outputs)
-        self.evaluate_with_error_rates(is_test=True)
+        data_loader = load_test_data(self.config)
+        self._evaluate_with_error_rates(data_loader)
 
     def _log_epoch_metrics(self, metrics):
         for name, values in metrics.items():
@@ -253,21 +246,17 @@ class CBHGModel(LightningModule):
             self.log(name, epoch_metric_mean)
             values.clear()
 
-    def evaluate_with_error_rates(self, is_test=False):
-        if is_test:
-            self.config.config["load_test_data"] = True
-            __, iterator, __ = load_iterators(self.config)
-        else:
-            __, __, iterator = load_iterators(self.config)
+    def _evaluate_with_error_rates(self, data_loader):
         predictions_dir = Path(self.trainer.log_dir).joinpath("predictions")
         predictions_dir.mkdir(parents=True, exist_ok=True)
         diacritizer = TorchCBHGDiacritizer(self.config)
+        self.freeze()
         diacritizer.set_model(self)
         all_orig = []
         all_predicted = []
         results = {}
         num_processed = 0
-        for batch in iterator:
+        for batch in data_loader:
             for text in batch["original"]:
                 if num_processed > self.config["error_rates_n_batches"]:
                     break
@@ -284,49 +273,13 @@ class CBHGModel(LightningModule):
             lines = "\n".join(sent for sent in all_predicted)
             file.write(lines)
         try:
-            results["DER"] = der.calculate_der_from_path(orig_path, predicted_path)
-            results["DER*"] = der.calculate_der_from_path(
-                orig_path, predicted_path, case_ending=False
-            )
-            results["WER"] = wer.calculate_wer_from_path(orig_path, predicted_path)
-            results["WER*"] = wer.calculate_wer_from_path(
-                orig_path, predicted_path, case_ending=False
-            )
+            results = calculate_error_rates(orig_path, predicted_path)
         except:
             _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
-            results = {"DER": 0.0, "DER*": 0.0, "WER": 0.0, "WER*": 0.0}
+            results = {"DER": 0.0, "WER": 0.0, "DER*": 0.0, "WER*": 0.0}
         num_examples = self.config["n_predicted_text_tensorboard"]
         for i, (org, pred) in enumerate(
             more_itertools.take(num_examples, zip(all_orig, all_predicted))
         ):
             self.logger.experiment.add_text(f"eval-text/{i}", f"{org} |->  {pred}")
         return results
-
-    @staticmethod
-    def get_lr_scheduler(optimizer, warmup_steps, total_steps, min_lr=0):
-        """
-        Create a learning rate scheduler with linear warm-up and cosine learning rate decay.
-
-        Args:
-            optimizer (torch.optim.Optimizer): The optimizer for which to create the scheduler.
-            warmup_steps (int): The number of warm-up steps.
-            total_steps (int): The total number of steps.
-            min_lr (float, optional): The minimum learning rate at the end of the decay. Default: 0.
-
-        Returns:
-            torch.optim.lr_scheduler.LambdaLR: The learning rate scheduler.
-        """
-
-        def lr_lambda(current_step):
-            if current_step < warmup_steps:
-                # Linear warm-up
-                return float(current_step) / float(max(1, warmup_steps))
-            else:
-                # Cosine learning rate decay
-                progress = float(current_step - warmup_steps) / float(
-                    max(1, total_steps - warmup_steps)
-                )
-                return max(min_lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
-
-        scheduler = LambdaLR(optimizer, lr_lambda)
-        return scheduler

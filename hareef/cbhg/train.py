@@ -13,10 +13,10 @@ from lightning import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
+from hareef.utils import find_last_checkpoint
 from .config_manager import ConfigManager
-from .dataset import load_iterators
+from .dataset import load_training_data, load_test_data, load_validation_data
 from .model import CBHGModel
-from .util.helpers import find_last_checkpoint
 
 
 _LOGGER = logging.getLogger("hareef.cbhg.train")
@@ -105,7 +105,7 @@ def main():
 
     if args.continue_from:
         if args.continue_from == 'last':
-            checkpoint_filename, epoch, step = find_last_checkpoint()
+            checkpoint_filename, epoch, step = find_last_checkpoint(config["logs_root_directory"])
             args.continue_from = checkpoint_filename
             _LOGGER.info(f"Automatically using checkpoint last checkpoint from: epoch={epoch} - step={step}")
         _LOGGER.info(f"Continueing training from checkpoint: {args.continue_from}")
@@ -114,10 +114,10 @@ def main():
     if args.test:
         _LOGGER.info("Testing loop starting...")
         config.config["load_test_data"] = True
-        __, test_loader, __ = load_iterators(config)
+        test_loader = load_test_data(config)
         trainer.test(model, test_loader)
     else:
-        train_loader, __, val_loader = load_iterators(config)
+        train_loader, val_loader = load_training_data(config), load_validation_data(config)
         inference_config_path = logs_root_directory.joinpath("inference-config.json")
         with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
             json.dump(

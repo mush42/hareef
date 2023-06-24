@@ -2,7 +2,9 @@
 
 import math
 
+
 import numpy as np
+from torch.optim.lr_scheduler import LambdaLR
 
 
 class LearningRateDecay:
@@ -67,8 +69,37 @@ class CosineScheduler:
         return self.base_lr
 
 
-def adjust_learning_rate(optimizer, global_step):
-    lr = LearningRateDecay()(global_step=global_step)
-    for param_group in optimizer.param_groups:
-        param_group["lr"] = lr
-    return lr
+    def adjust_learning_rate(optimizer, global_step):
+        lr = LearningRateDecay()(global_step=global_step)
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
+        return lr
+
+
+def cosine_decay_lr_scheduler(optimizer, warmup_steps, total_steps, min_lr=0):
+    """
+    Create a learning rate scheduler with linear warm-up and cosine learning rate decay.
+
+    Args:
+        optimizer (torch.optim.Optimizer): The optimizer for which to create the scheduler.
+        warmup_steps (int): The number of warm-up steps.
+        total_steps (int): The total number of steps.
+        min_lr (float, optional): The minimum learning rate at the end of the decay. Default: 0.
+
+    Returns:
+        torch.optim.lr_scheduler.LambdaLR: The learning rate scheduler.
+    """
+
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            # Linear warm-up
+            return float(current_step) / float(max(1, warmup_steps))
+        else:
+            # Cosine learning rate decay
+            progress = float(current_step - warmup_steps) / float(
+                max(1, total_steps - warmup_steps)
+            )
+            return max(min_lr, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+    scheduler = LambdaLR(optimizer, lr_lambda)
+    return scheduler

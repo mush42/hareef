@@ -82,25 +82,15 @@ def collate_fn(data):
     return batch
 
 
-def load_training_data(config_manager, loader_parameters):
-    """
-    Loading the training data using pandas
-    """
-
-    if not config_manager.config["load_training_data"]:
-        return []
-
-    if config_manager.config["is_data_preprocessed"]:
+def load_training_data(config_manager, **loader_parameters):
+    if config_manager["is_data_preprocessed"]:
         path = os.path.join(config_manager.data_dir, "train.csv")
         train_data = pd.read_csv(
             path,
             encoding="utf-8",
-            sep=config_manager.config["data_separator"],
-            nrows=config_manager.config["n_training_examples"],
+            sep=config_manager["data_separator"],
             header=None,
         )
-
-        # train_data = train_data[train_data[0] <= config_manager.config["max_len"]]
         training_set = DiacritizationDataset(
             config_manager, train_data.index, train_data
         )
@@ -111,37 +101,31 @@ def load_training_data(config_manager, loader_parameters):
             train_data = [
                 text
                 for text in train_data
-                if len(text) <= config_manager.config["max_len"]
+                if len(text) <= config_manager["max_len"]
             ]
         training_set = DiacritizationDataset(
             config_manager, [idx for idx in range(len(train_data))], train_data
         )
 
+    loader_parameters.setdefault("batch_size", config_manager["batch_size"])
+    loader_parameters.setdefault("shuffle", True)
+    loader_parameters.setdefault("num_workers", os.cpu_count())
     train_iterator = DataLoader(
         training_set, collate_fn=collate_fn, **loader_parameters
     )
-
     _LOGGER.info(f"Length of training iterator = {len(train_iterator)}")
     return train_iterator
 
 
-def load_test_data(config_manager, loader_parameters):
-    """
-    Loading the test data using pandas
-    """
-    if not config_manager.config["load_test_data"]:
-        return []
-    if config_manager.config["is_data_preprocessed"]:
-        test_file_name = "test.csv"
-        path = os.path.join(config_manager.data_dir, test_file_name)
+def load_test_data(config_manager, **loader_parameters):
+    if config_manager["is_data_preprocessed"]:
+        path = os.path.join(config_manager.data_dir, "test.csv")
         test_data = pd.read_csv(
             path,
             encoding="utf-8",
-            sep=config_manager.config["data_separator"],
-            nrows=config_manager.config["n_test_examples"],
+            sep=config_manager["data_separator"],
             header=None,
         )
-        # test_data = test_data[test_data[0] <= config_manager.config["max_len"]]
         test_dataset = DiacritizationDataset(config_manager, test_data.index, test_data)
     else:
         test_file_name = "test.txt"
@@ -149,37 +133,28 @@ def load_test_data(config_manager, loader_parameters):
         with open(path, encoding="utf8") as file:
             test_data = file.readlines()
         test_data = [
-            text for text in test_data if len(text) <= config_manager.config["max_len"]
+            text for text in test_data if len(text) <= config_manager["max_len"]
         ]
         test_dataset = DiacritizationDataset(
             config_manager, [idx for idx in range(len(test_data))], test_data
         )
 
+    loader_parameters.setdefault("batch_size", config_manager["batch_size"])
+    loader_parameters.setdefault("num_workers", os.cpu_count())
     test_iterator = DataLoader(test_dataset, collate_fn=collate_fn, **loader_parameters)
-
     _LOGGER.info(f"Length of test iterator = {len(test_iterator)}")
     return test_iterator
 
 
-def load_validation_data(config_manager, loader_parameters):
-    """
-    Loading the validation data using pandas
-    """
-
-    if not config_manager.config["load_validation_data"]:
-        return []
-
-    if config_manager.config["is_data_preprocessed"]:
+def load_validation_data(config_manager, **loader_parameters):
+    if config_manager["is_data_preprocessed"]:
         path = os.path.join(config_manager.data_dir, "val.csv")
         valid_data = pd.read_csv(
             path,
             encoding="utf-8",
-            sep=config_manager.config["data_separator"],
-            nrows=config_manager.config["n_validation_examples"],
+            sep=config_manager["data_separator"],
             header=None,
         )
-
-        # valid_data = valid_data[valid_data[0] <= config_manager.config["max_len"]]
         valid_dataset = DiacritizationDataset(
             config_manager, valid_data.index, valid_data
         )
@@ -187,34 +162,18 @@ def load_validation_data(config_manager, loader_parameters):
         path = os.path.join(config_manager.data_dir, "val.txt")
         with open(path, encoding="utf8") as file:
             valid_data = file.readlines()
-
         valid_data = [
-            text for text in valid_data if len(text) <= config_manager.config["max_len"]
+            text for text in valid_data if len(text) <= config_manager["max_len"]
         ]
         valid_dataset = DiacritizationDataset(
             config_manager, [idx for idx in range(len(valid_data))], valid_data
         )
 
+    loader_parameters.setdefault("batch_size", config_manager["batch_size"])
+    loader_parameters.setdefault("num_workers", os.cpu_count())
     valid_iterator = DataLoader(
         valid_dataset, collate_fn=collate_fn, **loader_parameters
     )
-
     _LOGGER.info(f"Length of valid iterator = {len(valid_iterator)}")
     return valid_iterator
 
-
-def load_iterators(config_manager):
-    """
-    Load the data iterators
-    Args:
-    """
-    params = {
-        "batch_size": config_manager.config["batch_size"],
-        "num_workers": os.cpu_count(),
-    }
-    train_iterator = load_training_data(
-        config_manager, loader_parameters={**params, "shuffle": True}
-    )
-    valid_iterator = load_validation_data(config_manager, loader_parameters=params)
-    test_iterator = load_test_data(config_manager, loader_parameters=params)
-    return train_iterator, test_iterator, valid_iterator

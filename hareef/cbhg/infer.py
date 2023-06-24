@@ -9,9 +9,10 @@ from itertools import repeat
 import numpy as np
 import torch
 
-from ..config_manager import ConfigManager
-from ..model import CBHGModel
-from ..util.helpers import find_last_checkpoint
+from hareef.utils import find_last_checkpoint
+
+from .config_manager import ConfigManager
+from .model import CBHGModel
 from .diacritizer import OnnxCBHGDiacritizer, TorchCBHGDiacritizer
 
 _LOGGER = logging.getLogger(__package__)
@@ -53,7 +54,7 @@ def main():
     else:
         if not args.checkpoint:
             try:
-                checkpoint_filename, epoch, step = find_last_checkpoint()
+                checkpoint_filename, epoch, step = find_last_checkpoint(config["logs_root_directory"])
                 _LOGGER.info(f"Using checkpoint from: epoch={epoch} - step={step}")
                 _LOGGER.info(f"file: {checkpoint_filename}")
                 args.checkpoint = checkpoint_filename

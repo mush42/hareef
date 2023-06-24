@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from hareef.utils import find_last_checkpoint
 from .config_manager import ConfigManager
 from .model import CBHGModel
-from .util.helpers import find_last_checkpoint
 
 _LOGGER = logging.getLogger("hareef.cbhg.export_onnx")
 OPSET_VERSION = 15
@@ -42,7 +42,7 @@ def main():
     config = ConfigManager(args.config)
 
     if not args.checkpoint:
-        checkpoint_filename, epoch, step = find_last_checkpoint()
+        checkpoint_filename, epoch, step = find_last_checkpoint(config["logs_root_directory"])
         model = CBHGModel.load_from_checkpoint(
             checkpoint_filename, map_location="cpu", config=config
         )
