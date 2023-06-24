@@ -12,7 +12,7 @@ from .config_manager import ConfigManager
 from .model import CBHGModel
 from .util.helpers import find_last_checkpoint
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("hareef.cbhg.export_onnx")
 OPSET_VERSION = 15
 
 

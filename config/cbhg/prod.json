@@ -1,5 +1,6 @@
 {
   "session_name": "base",
+  "logs_root_directory": "/content/drive/MyDrive/hareef/training",
   "data_directory": "/content/drive/MyDrive/hareef/data",
   "data_type": "CA_MSA",
   "n_training_examples": null,

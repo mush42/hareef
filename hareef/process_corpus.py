@@ -13,7 +13,7 @@ from more_itertools import collapse
 
 from .text_cleaners import collapse_whitespace
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("hareef.process_corpus")
 
 # Order is critical
 SENTENCE_BOUNDRY_PUNCS = [".", "؟", "!", "،", "؛"]

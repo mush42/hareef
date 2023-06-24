@@ -19,7 +19,7 @@ from .model import CBHGModel
 from .util.helpers import find_last_checkpoint
 
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger("hareef.cbhg.train")
 
 
 def main():
@@ -52,17 +52,19 @@ def main():
     torch.backends.cudnn.benchmark = False
 
     config = ConfigManager(args.config)
+    logs_root_directory = Path(config["logs_root_directory"])
+    logs_root_directory.mkdir(parents=True, exist_ok=True)
+    _LOGGER.info(f"Logs directory: {logs_root_directory}")
+
     model = CBHGModel(config)
 
     checkpoint_save_callback = ModelCheckpoint(
         every_n_train_steps=config["model_save_steps"],
         every_n_epochs=config["model_save_epoches"],
     )
-    _LOGGER.info("Configuring loss early stop callback")
     loss_early_stop_callback = EarlyStopping(
         monitor="val_loss", min_delta=0.00, patience=5, mode="min", strict=True
     )
-    _LOGGER.info("Configuring accuracy early stop callback")
     accuracy_early_stop_callback = EarlyStopping(
         monitor="val_accuracy",
         min_delta=0.00,
@@ -98,6 +100,7 @@ def main():
         enable_model_summary=True,
         fast_dev_run=args.debug,
         log_every_n_steps=10,
+        default_root_dir=logs_root_directory,
     )
 
     if args.continue_from:
@@ -115,8 +118,7 @@ def main():
         trainer.test(model, test_loader)
     else:
         train_loader, __, val_loader = load_iterators(config)
-        inference_config_path = Path(trainer.log_dir).joinpath("inference-config.json")
-        inference_config_path.parent.mkdir(parents=True, exist_ok=True)
+        inference_config_path = logs_root_directory.joinpath("inference-config.json")
         with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
             json.dump(
                 config.text_encoder.dump_tokens(),
