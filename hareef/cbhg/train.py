@@ -26,7 +26,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.cbhg.training",
+        prog="hareef.cbhg.train",
         description="Training script for hareef.cbhg model.",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
