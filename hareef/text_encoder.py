@@ -2,7 +2,7 @@
 
 import dataclasses
 import typing
-from typing import Optional, Any
+from typing import Any, Optional
 
 from .constants import ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS, PUNCTUATIONS
 from .text_cleaners import valid_arabic_cleaner
@@ -109,6 +109,6 @@ class HareefTextEncoder:
             "bos": self.config.bos,
             "eos": self.config.eos,
             "input_id_map": dict(self.input_symbol_to_id),
-            "target_id_map": dict(self.target_symbol_to_id)
+            "target_id_map": dict(self.target_symbol_to_id),
         }
         return {"text_encoder": data}

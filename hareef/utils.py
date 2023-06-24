@@ -9,11 +9,10 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from diacritization_evaluation import der, wer
 from torch import nn
 
-
 CHECKPOINT_RE = re.compile(r"epoch=(?P<epoch>[0-9]+)-step=(?P<step>[0-9]+)")
-
 
 
 def plot_alignment(alignment: torch.Tensor, path: str, global_step: Any = 0):
@@ -147,7 +146,9 @@ def positional_encoding(position, model_dim):
     return torch.from_numpy(pos_encoding)
 
 
-def calculate_error_rates(original_file_path: str, target_file_path: str) -> dict[str, float]:
+def calculate_error_rates(
+    original_file_path: str, target_file_path: str
+) -> dict[str, float]:
     """
     Calculates der/wer error rates from paths
     """
@@ -188,7 +189,6 @@ def categorical_accuracy(preds, y, tag_pad_idx, device="cuda"):
     non_pad_elements = torch.nonzero((y != tag_pad_idx))
     correct = max_preds[non_pad_elements].squeeze(1).eq(y[non_pad_elements])
     return correct.sum() / torch.FloatTensor([y[non_pad_elements].shape[0]]).to(device)
-
 
 
 def make_src_mask(src: torch.Tensor, pad_idx=0):

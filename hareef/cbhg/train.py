@@ -9,15 +9,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from hareef.utils import find_last_checkpoint
 from lightning import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
-from hareef.utils import find_last_checkpoint
 from .config_manager import ConfigManager
-from .dataset import load_training_data, load_test_data, load_validation_data
+from .dataset import load_test_data, load_training_data, load_validation_data
 from .model import CBHGModel
-
 
 _LOGGER = logging.getLogger("hareef.cbhg.train")
 
@@ -34,7 +33,9 @@ def main():
     parser.add_argument("--accelerator", type=str, default=choices[0], choices=choices)
     parser.add_argument("--devices", type=int, default=1)
     parser.add_argument("--seed", type=int, default=1234, help="random seed")
-    parser.add_argument("--continue-from", type=str, help="Checkpoint to continue training from")
+    parser.add_argument(
+        "--continue-from", type=str, help="Checkpoint to continue training from"
+    )
     parser.add_argument(
         "--test", action="store_true", help="Run the test after training"
     )
@@ -104,10 +105,14 @@ def main():
     )
 
     if args.continue_from:
-        if args.continue_from == 'last':
-            checkpoint_filename, epoch, step = find_last_checkpoint(config["logs_root_directory"])
+        if args.continue_from == "last":
+            checkpoint_filename, epoch, step = find_last_checkpoint(
+                config["logs_root_directory"]
+            )
             args.continue_from = checkpoint_filename
-            _LOGGER.info(f"Automatically using checkpoint last checkpoint from: epoch={epoch} - step={step}")
+            _LOGGER.info(
+                f"Automatically using checkpoint last checkpoint from: epoch={epoch} - step={step}"
+            )
         _LOGGER.info(f"Continueing training from checkpoint: {args.continue_from}")
         trainer.ckpt_path = args.continue_from
 
@@ -117,14 +122,13 @@ def main():
         test_loader = load_test_data(config)
         trainer.test(model, test_loader)
     else:
-        train_loader, val_loader = load_training_data(config), load_validation_data(config)
+        train_loader, val_loader = load_training_data(config), load_validation_data(
+            config
+        )
         inference_config_path = logs_root_directory.joinpath("inference-config.json")
         with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
             json.dump(
-                config.text_encoder.dump_tokens(),
-                file,
-                ensure_ascii=False,
-                indent=2
+                config.text_encoder.dump_tokens(), file, ensure_ascii=False, indent=2
             )
         _LOGGER.info(f"Writing inference config to file: `{inference_config_path}`")
         _LOGGER.info("Training loop starting...")

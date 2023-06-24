@@ -8,15 +8,13 @@ from typing import List, Optional
 
 import more_itertools
 import torch
-from diacritization_evaluation import der, wer
+from hareef.learning_rates import cosine_decay_lr_scheduler
+from hareef.utils import calculate_error_rates, categorical_accuracy
 from lightning.pytorch import LightningModule
 from torch import nn, optim
 
-from hareef.learning_rates import cosine_decay_lr_scheduler
-from hareef.utils import categorical_accuracy, calculate_error_rates
-from .dataset import load_validation_data, load_test_data
+from .dataset import load_test_data, load_validation_data
 from .diacritizer import TorchCBHGDiacritizer
-from .modules.options import OptimizerType
 from .modules.tacotron_modules import CBHG, Prenet
 
 _LOGGER = logging.getLogger(__package__)
@@ -220,7 +218,10 @@ class CBHGModel(LightningModule):
             weight_decay=self.config["weight_decay"],
         )
         self.scheduler = cosine_decay_lr_scheduler(
-           optimizer, self.config["warmup_steps"], self.config["max_epoches"], min_lr=0.0
+            optimizer,
+            self.config["warmup_steps"],
+            self.config["max_epoches"],
+            min_lr=0.0,
         )
         return [optimizer], [self.scheduler]
 

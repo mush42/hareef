@@ -99,9 +99,7 @@ def load_training_data(config_manager, **loader_parameters):
         with open(path, encoding="utf8") as file:
             train_data = file.readlines()
             train_data = [
-                text
-                for text in train_data
-                if len(text) <= config_manager["max_len"]
+                text for text in train_data if len(text) <= config_manager["max_len"]
             ]
         training_set = DiacritizationDataset(
             config_manager, [idx for idx in range(len(train_data))], train_data
@@ -176,4 +174,3 @@ def load_validation_data(config_manager, **loader_parameters):
     )
     _LOGGER.info(f"Length of valid iterator = {len(valid_iterator)}")
     return valid_iterator
-

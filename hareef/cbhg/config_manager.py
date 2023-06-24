@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Dict
 
 import torch
-
 from hareef.constants import DEFAULT_TOKEN_MAP
 from hareef.text_encoder import HareefTextEncoder, TokenConfig
 

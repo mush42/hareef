@@ -2,7 +2,6 @@
 
 import math
 
-
 import numpy as np
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -67,7 +66,6 @@ class CosineScheduler:
                 / 2
             )
         return self.base_lr
-
 
     def adjust_learning_rate(optimizer, global_step):
         lr = LearningRateDecay()(global_step=global_step)

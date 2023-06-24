@@ -51,9 +51,9 @@ ALL_POSSIBLE_DIACRITICS = {m.value for m in ArabicDiacritics}
 VALID_ARABIC_CHARS = {WORD_SEPARATOR, *ARABIC_LETTERS, *BASIC_DIACRITICS, *PUNCTUATIONS}
 
 
-PAD = '_'
-BOS = '^'
-EOS = '$'
+PAD = "_"
+BOS = "^"
+EOS = "$"
 
 INPUT_TOKENS = [PAD, BOS, EOS, *sorted(VALID_ARABIC_CHARS.difference(BASIC_DIACRITICS))]
 TARGET_TOKENS = [PAD, BOS, EOS, *sorted(ALL_POSSIBLE_DIACRITICS)]
@@ -64,4 +64,3 @@ DEFAULT_TOKEN_MAP = {
     "input_id_map": {char: idx for idx, char in enumerate(INPUT_TOKENS)},
     "target_id_map": {char: idx for idx, char in enumerate(TARGET_TOKENS)},
 }
-
