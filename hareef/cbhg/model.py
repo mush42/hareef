@@ -178,7 +178,6 @@ class CBHGModel(LightningModule):
         sch.step()
 
     def validation_step(self, batch, batch_idx):
-        self.freeze()
         batch["src"] = batch["src"].to(self.device)
         batch["lengths"] = batch["lengths"].to("cpu")
         batch["target"] = batch["target"].to(self.device)
@@ -199,7 +198,6 @@ class CBHGModel(LightningModule):
         self.val_step_outputs.setdefault("val_accuracy", []).append(val_accuracy)
         self.log("val_loss", val_loss)
         self.log("val_accuracy", val_accuracy)
-        self.unfreeze()
         return {"val_loss": val_loss, "val_accuracy": val_accuracy}
 
     def test_step(self, batch, batch_idx):
@@ -259,7 +257,6 @@ class CBHGModel(LightningModule):
         predictions_dir = Path(predictions_dir)
         predictions_dir.mkdir(parents=True, exist_ok=True)
         diacritizer = TorchCBHGDiacritizer(self.config)
-        self.freeze()
         diacritizer.set_model(self)
         all_orig = []
         all_predicted = []
