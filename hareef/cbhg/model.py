@@ -9,7 +9,7 @@ from typing import List, Optional
 import more_itertools
 import torch
 from hareef.learning_rates import cosine_decay_lr_scheduler
-from hareef.utils import calculate_error_rates, categorical_accuracy
+from hareef.utils import calculate_error_rates, format_error_rates_as_table, categorical_accuracy
 from lightning.pytorch import LightningModule
 from torch import nn, optim
 
@@ -234,18 +234,20 @@ class CBHGModel(LightningModule):
             "evaluate_with_error_rates_epoches"
         ] == 0:
             data_loader = load_validation_data(self.config)
-            self.evaluate_with_error_rates(
+            error_rates = self.evaluate_with_error_rates(
                 data_loader,
                 Path(self.trainer.log_dir).joinpath("predictions")
             )
+            _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
     def on_test_epoch_end(self) -> None:
         self._log_epoch_metrics(self.test_step_outputs)
         data_loader = load_test_data(self.config)
-        self.evaluate_with_error_rates(
+        error_rates = self.evaluate_with_error_rates(
             data_loader,
             Path(self.trainer.log_dir).joinpath("predictions")
         )
+        _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
     def _log_epoch_metrics(self, metrics):
         for name, values in metrics.items():

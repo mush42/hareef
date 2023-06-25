@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint, format_as_table
+from hareef.utils import find_last_checkpoint, format_error_rates_as_table
 
 from .config_manager import ConfigManager
 from .dataset import load_test_data, load_validation_data
@@ -80,13 +80,8 @@ def main():
     except:
         _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
         sys.exit(1)
-    metrics, values = [e[0] for e in error_rates], [e[1] for e in error_rates]
-    cols = [
-        ("".ljust(10), ["   DER", "   WER"]),
-        ("With CE".ljust(10), [error_rates["DER"], error_rates["WER"]]),
-        ("Without CE".ljust(10), [error_rates["DER*"], error_rates["WER*"]]),
-    ]
-    print(format_as_table(*cols))
+
+    _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
 
 if __name__ == "__main__":

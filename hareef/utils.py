@@ -264,3 +264,13 @@ def format_as_table(*cols: tuple[str, list[str]]) -> str:
         summary += "\n" + " | ".join(line)
     summary += "\n" + "-" * total_width
     return summary
+
+
+def format_error_rates_as_table(error_rates):
+    metrics, values = [e[0] for e in error_rates], [e[1] for e in error_rates]
+    cols = [
+        ("".ljust(10), ["   DER", "   WER"]),
+        ("With CE".ljust(10), [error_rates["DER"], error_rates["WER"]]),
+        ("Without CE".ljust(10), [error_rates["DER*"], error_rates["WER*"]]),
+    ]
+    return format_as_table(*cols)
