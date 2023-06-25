@@ -6,7 +6,7 @@
   "is_data_preprocessed": false,
   "data_separator": "|",
   "diacritics_separator": "*",
-  "max_len": 600,
+  "max_len": 300,
   "learning_rate": 0.001,
   "batch_size": 512,
   "adam_beta1": 0.9,
