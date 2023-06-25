@@ -1,7 +1,7 @@
 {
   "session_name": "prod",
   "logs_root_directory": "/content/drive/MyDrive/hareef/training",
-  "data_directory": "/content/drive/MyDrive/hareef/data",
+  "data_directory": /content/dataset",
   "data_type": "CA_MSA",
   "is_data_preprocessed": false,
   "data_separator": "|",
