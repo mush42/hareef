@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
+import more_itertools
 import numpy as np
 import torch
 from diacritization_evaluation import der, wer
@@ -216,32 +217,22 @@ def make_trg_mask(trg, trg_pad_idx=0):
 
 
 def find_last_checkpoint(logs_root_directory):
-    pl_logs_dir = Path(logs_root_directory).joinpath("lightning_logs")
-    last_version = max(
-        int(v.name.split("_")[1])
-        for v in pl_logs_dir.iterdir()
-        if all(
-            [
-                v.name.startswith("version_"),
-                v.is_dir(),
-                v.joinpath("checkpoints").exists()
-                and any(v.joinpath("checkpoints").iterdir()),
-            ]
-        )
-    )
-    checkpoints_dir = pl_logs_dir.joinpath(f"version_{last_version}", "checkpoints")
-    available_checkpoints = [
-        m.groupdict()
-        for m in (
-            CHECKPOINT_RE.match(item.stem)
-            for item in checkpoints_dir.iterdir()
+    checkpoints_dir = Path(logs_root_directory)
+    available_checkpoints = {
+        file: CHECKPOINT_RE.match(file.stem)
+        for file in (
+            item for item in checkpoints_dir.rglob("*.ckpt")
             if item.is_file()
         )
-        if m is not None
-    ]
-    epoch, step = max((m["epoch"], m["step"]) for m in available_checkpoints)
-    return (
-        os.fspath(checkpoints_dir.joinpath(f"epoch={epoch}-step={step}.ckpt")),
-        epoch,
-        step,
-    )
+    }
+    available_checkpoints = {
+        filename: (int(match.groupdict()["epoch"]), int(match.groupdict()["step"]))
+        for (filename, match) in available_checkpoints.items()
+        if match is not None
+    }
+    available_checkpoints = sorted(available_checkpoints.items(), key=lambda item: item[1])
+    checkpoint = more_itertools.last(available_checkpoints, default=None)
+    if checkpoint is None:
+        raise FileNotFoundError("No checkpoints were found")
+    filename, (epoch, step) = checkpoint
+    return os.fspath(filename.absolute()), epoch, step
