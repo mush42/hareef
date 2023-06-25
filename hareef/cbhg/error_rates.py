@@ -76,14 +76,15 @@ def main():
     iterator = load_test_data(config) if args.datasplit == 'test' else load_validation_data(config)
     try:
         with TemporaryDirectory() as predictions_dir:
-            error_rates = tuple(model.evaluate_with_error_rates(iterator, predictions_dir).items())
+            error_rates = model.evaluate_with_error_rates(iterator, predictions_dir)
     except:
         _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
         sys.exit(1)
     metrics, values = [e[0] for e in error_rates], [e[1] for e in error_rates]
     cols = [
-        ("[METRIC]".ljust(12), metrics),
-        ("[%]".ljust(12), values)
+        ("".ljust(10), ["   DER", "   WER"]),
+        ("With CE".ljust(10), [error_rates["DER"], error_rates["WER"]]),
+        ("Without CE".ljust(10), [error_rates["DER*"], error_rates["WER*"]]),
     ]
     print(format_as_table(*cols))
 
