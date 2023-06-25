@@ -4,7 +4,6 @@ import argparse
 import logging
 import random
 import sys
-from itertools import repeat
 
 import numpy as np
 import torch

@@ -1,0 +1,92 @@
+# coding: utf-8
+
+import argparse
+import logging
+import random
+import sys
+from tempfile import TemporaryDirectory
+
+import numpy as np
+import torch
+from hareef.utils import find_last_checkpoint, format_as_table
+
+from .config_manager import ConfigManager
+from .dataset import load_test_data, load_validation_data
+from .diacritizer import OnnxCBHGDiacritizer, TorchCBHGDiacritizer
+from .model import CBHGModel
+
+_LOGGER = logging.getLogger(__package__)
+
+
+def main():
+    logging.basicConfig(level=logging.DEBUG)
+
+    parser = argparse.ArgumentParser(
+        prog="hareef.cbhg.error_rates",
+        description="Calculate DER/WER diacritization error rates",
+    )
+    parser.add_argument("--config", dest="config", type=str, required=True)
+    parser.add_argument("--seed", type=int, default=1234, help="random seed")
+    parser.add_argument(
+        "--device",
+        type=str,
+        choices=["cpu", "gpu"],
+        default="cpu",
+        help="Device used for inference",
+    )
+    parser.add_argument(
+        "--datasplit",
+        type=str,
+        choices=['val', 'test'],
+        default="val",
+        help="Dataset split to use (val or test)"
+    )
+    parser.add_argument("--checkpoint", type=str, required=False)
+
+    args = parser.parse_args()
+
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    config = ConfigManager(args.config)
+
+    if not args.checkpoint:
+        try:
+            checkpoint_filename, epoch, step = find_last_checkpoint(
+                config["logs_root_directory"]
+            )
+            _LOGGER.info(f"Using checkpoint from: epoch={epoch} - step={step}")
+            _LOGGER.info(f"file: {checkpoint_filename}")
+            args.checkpoint = checkpoint_filename
+        except:
+            _LOGGER.exception(
+                "Failed to obtain the path to the last checkpoint", exc_info=True
+            )
+            sys.exit(1)
+
+    model = CBHGModel.load_from_checkpoint(
+        args.checkpoint, map_location=args.device, config=config
+    )
+    model.freeze()
+
+    iterator = load_test_data(config) if args.datasplit == 'test' else load_validation_data(config)
+    try:
+        with TemporaryDirectory() as predictions_dir:
+            error_rates = tuple(model.evaluate_with_error_rates(iterator, predictions_dir).items())
+    except:
+        _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
+        sys.exit(1)
+    metrics, values = [e[0] for e in error_rates], [e[1] for e in error_rates]
+    cols = [
+        ("[METRIC]".ljust(12), metrics),
+        ("[%]".ljust(12), values)
+    ]
+    print(format_as_table(*cols))
+
+
+if __name__ == "__main__":
+    main()

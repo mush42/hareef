@@ -157,26 +157,26 @@ def calculate_error_rates(
     assert os.path.isfile(target_file_path)
 
     _wer = wer.calculate_wer_from_path(
-        inp_path=original_file_path, out_path=target_file_path, case_ending=True
+        original_path=original_file_path, predicted_path=target_file_path, case_ending=True
     )
 
     _wer_without_case_ending = wer.calculate_wer_from_path(
-        inp_path=original_file_path, out_path=target_file_path, case_ending=False
+        original_path=original_file_path, predicted_path=target_file_path, case_ending=False
     )
 
     _der = der.calculate_der_from_path(
-        inp_path=original_file_path, out_path=target_file_path, case_ending=True
+        original_path=original_file_path, predicted_path=target_file_path, case_ending=True
     )
 
     _der_without_case_ending = der.calculate_der_from_path(
-        inp_path=original_file_path, out_path=target_file_path, case_ending=False
+        original_path=original_file_path, predicted_path=target_file_path, case_ending=False
     )
 
     return {
-        "WER": _wer,
         "DER": _der,
-        "WER*": _wer_without_case_ending,
+        "WER": _wer,
         "DER*": _der_without_case_ending,
+        "WER*": _wer_without_case_ending,
     }
 
 
@@ -236,3 +236,31 @@ def find_last_checkpoint(logs_root_directory):
         raise FileNotFoundError("No checkpoints were found")
     filename, (epoch, step) = checkpoint
     return os.fspath(filename.absolute()), epoch, step
+
+
+def format_as_table(*cols: tuple[str, list[str]]) -> str:
+    """Taken from lightening"""
+    n_rows = len(cols[0][1])
+    n_cols = 1 + len(cols)
+
+    # Get formatting width of each column
+    col_widths = []
+    for c in cols:
+        col_width = max(len(str(a)) for a in c[1]) if n_rows else 0
+        col_width = max(col_width, len(c[0]))  # minimum length is header length
+        col_widths.append(col_width)
+
+    # Formatting
+    s = "{:<{}}"
+    total_width = sum(col_widths) + 3 * n_cols
+    header = [s.format(c[0], w) for c, w in zip(cols, col_widths)]
+
+    # Summary = header + divider + Rest of table
+    summary = " | ".join(header) + "\n" + "-" * total_width
+    for i in range(n_rows):
+        line = []
+        for c, w in zip(cols, col_widths):
+            line.append(s.format(str(c[1][i]), w))
+        summary += "\n" + " | ".join(line)
+    summary += "\n" + "-" * total_width
+    return summary

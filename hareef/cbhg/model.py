@@ -234,12 +234,18 @@ class CBHGModel(LightningModule):
             "evaluate_with_error_rates_epoches"
         ] == 0:
             data_loader = load_validation_data(self.config)
-            self._evaluate_with_error_rates(data_loader)
+            self.evaluate_with_error_rates(
+                data_loader,
+                Path(self.trainer.log_dir).joinpath("predictions")
+            )
 
     def on_test_epoch_end(self) -> None:
         self._log_epoch_metrics(self.test_step_outputs)
         data_loader = load_test_data(self.config)
-        self._evaluate_with_error_rates(data_loader)
+        self.evaluate_with_error_rates(
+            data_loader,
+            Path(self.trainer.log_dir).joinpath("predictions")
+        )
 
     def _log_epoch_metrics(self, metrics):
         for name, values in metrics.items():
@@ -247,8 +253,8 @@ class CBHGModel(LightningModule):
             self.log(name, epoch_metric_mean)
             values.clear()
 
-    def _evaluate_with_error_rates(self, data_loader):
-        predictions_dir = Path(self.trainer.log_dir).joinpath("predictions")
+    def evaluate_with_error_rates(self, data_loader, predictions_dir):
+        predictions_dir = Path(predictions_dir)
         predictions_dir.mkdir(parents=True, exist_ok=True)
         diacritizer = TorchCBHGDiacritizer(self.config)
         self.freeze()
@@ -278,9 +284,10 @@ class CBHGModel(LightningModule):
         except:
             _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
             results = {"DER": 0.0, "WER": 0.0, "DER*": 0.0, "WER*": 0.0}
-        num_examples = self.config["n_predicted_text_tensorboard"]
-        for i, (org, pred) in enumerate(
-            more_itertools.take(num_examples, zip(all_orig, all_predicted))
-        ):
-            self.logger.experiment.add_text(f"eval-text/{i}", f"{org} |->  {pred}")
+        if self.logger is not None:
+            num_examples = self.config["n_predicted_text_tensorboard"]
+            for i, (org, pred) in enumerate(
+                more_itertools.take(num_examples, zip(all_orig, all_predicted))
+            ):
+                self.logger.experiment.add_text(f"eval-text/{i}", f"{org} |->  {pred}")
         return results
