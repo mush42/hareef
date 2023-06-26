@@ -1,62 +1,122 @@
 # Hareef 
 
-This is the Pytorch implementation of the models as described in the paper 
-[Effective Deep Learning Models for Automatic Diacritization of Arabic Text](https://ieeexplore.ieee.org/document/9274427).
+**Hareef** is an implementation of state-of-the-art models for diacritics restoration for Arabic language.
+
+## Features
+
+* Training using pytorch-lightning
+* Standardized calculation of diacritization evaluation metrics
+* Export trained models to onnx
+* Easy to use scripts for preprocessing, cleaning, tokenizing, and post-processing text and outputs
+* Support for extracting sentences from any diacritized corpus
+
+## Currently implemented models
+
+Implementation of the following models is considered complete:
+
+-  **CBHG** model from the paper [Effective Deep Learning Models for Automatic Diacritization of Arabic Text](https://ieeexplore.ieee.org/document/9274427)
+
+## Planned models
+
+The following models will be implemented in the near future:
+
+- **2SDiac** from the paper [Take the Hint: Improving Arabic Diacritization with Partially-Diacritized Text](https://arxiv.org/abs/2306.03557)
+- **D2/D3** models  from the paper [Deep Diacritization: Efficient Hierarchical Recurrence for Improved Arabic Diacritization](https://arxiv.org/abs/2011.00538)
 
 
-# Creating the dataset
+# Usage
 
-First download the corpus from this [drive link] (https://drive.google.com/file/d/1oHk7hxTTU4M_IWpDcbUsg7jR9kGGXrUn/view?usp=sharing) and unzip it using 7-z.
+Here's how to train the **CBHG** model. The process is very similar for the other models.
 
-Then run the following command from the root of the repo:
+## Review model config
 
-```bash
-python3 make_dataset.py --corpus /path/to/corpus.txt --config ./config/cbhg.yml --validate
-```
+Every command requires passing a `--config` argument. The **config** contains model hyper parameters and data paths.
 
-This will create `train.txt`, `eval.txt`, and `test.txt` in the `./data/CA_MSA/` directory.
+For **CBHG** model this is the file **config/cbhg/config.json**.
+
+Please review the keys and change them based on your environment and needs. For instance, if you have abundant vram, you can increase `batch_size ` or `max_len`, both of which may improve the model's predictions.
 
 
-# Data Preprocessing
+## Install packages
 
-- The data can either be processed before training or when loading each batch.
-- If you decide to process the corpus before training, then the corpus must have test.csv, train.csv, and valid.csv. Each file must contain three columns: text (the original text), text without diacritics, and diacritics. You have to define the column separator and diacritics separator in the config file.
-- If the data is not preprocessed, you can specify that in the config.
-  In that case,  each batch will be processed and the text and diacritics 
-  will be extracted from the original text.
-- You also have to specify the text encoder and the cleaner functions.
-  This work includes two text encoders: BasicArabicEncoder, ArabicEncoderWithStartSymbol.
-  Moreover, we have one cleaning function: valid_arabic_cleaners, which clean all characters except valid Arabic characters,
-  which include Arabic letters, punctuations, and diacritics.
+Make sure you have **Python 3.10** or later.
 
-# Training
-
-All models config are placed in the config directory.
-
-```bash
-python train.py --config config/cbhg.yml
-```
-
-The model will report the WER and DER while training using the
-diacritization_evaluation package. The frequency of calculating WER and
-DER can be specified in the config file.
-
-# Testing
-
-The testing is done in the same way as training:
+Then clone this repo:
 
 ```bash
-python test.py --config config/cbhg.yml
+git clone https://github.com/mush42/hareef
 ```
 
-The model will load the last saved model unless you specified it in the config:
-test_data_path. If the test file name is different than test.csv, you
-can add it to the config: test_file_name.
+After this  cd to the repo, create a `virtualenv`, and install required packages:
 
-### Citation
-
-Please cite the paper if you use this repository:
-
-```text
-M. A. H. Madhfar and A. M. Qamar, "Effective Deep Learning Models for Automatic Diacritization of Arabic Text," in IEEE Access, vol. 9, pp. 273-288, 2021, doi: 10.1109/ACCESS.2020.3041676.
+```bash
+cd ./hareef
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip setuptools
+python3 -m pip install -r requirements.txt
 ```
+
+## Prepareing the dataset
+
+Training the models included in this repo requires a large corpus of fully diacritized Arabic text. You can download such a corpus from this [drive link](https://drive.google.com/file/d/1shhIEKc2FITVorSX26cmN9dPkKkYxI48/view?usp=sharing) and unzip it to a location of your choice.
+
+After downloading and unzipping the corpus, run the following command from the root of the repo:
+
+```bash
+python3 -m hareef.cbhg.process_corpus --config ./config/cbhg/config.json --validate [/path/to/extracted/arabic-diacritization-corpus.txt]
+```
+
+This will create `train.txt`, `val.txt`, and `test.txt` in the `./data/cbhg/CA_MSA/` directory (or the path you configured in `config.json`)
+
+## Training
+
+**Lightning** is used for training. Run the following command to start the training loop.
+
+```
+python3 -m hareef.cbhg.train --config ./config/cbhg/config.json
+```
+
+By default the model will train for 100 epochs. Early stop criteria  will stop training earlier if the `loss` metric does not improve for 5 consecutive epochs.
+
+
+## Evaluation
+
+To calculate **WER/DER** metrics with and without **case-endings**, use the following command:
+
+```bash
+python3 -m hareef.cbhg.error_rates --config ./config/cbhg/config.json
+``` 
+
+## Testing
+
+To test the model using the **test** data split, use the following command:
+
+```bash
+python3 -m hareef.cbhg.train --test --config ./config/cbhg/config.json
+```
+
+
+## Inference
+
+Use the following command to diacritize some passage of Arabic text using the last checkpoint:
+
+```bash
+python -m hareef.cbhg.infer --config ./config/cbhg/config.json --text "الجو جميل، والهواء عليل."
+```
+
+If you exported the model to ONNX, you can use the ONNX model instead of torch checkpoint by passing the `--onnx` argument to the script.
+
+
+## Exporting to ONNX
+
+To export the last checkpoint to **ONNX**, use the following command:
+
+```bash
+python3 -m hareef.cbhg.export_onnx --config ./config/cbhg/config.json --output ./model.onnx
+```
+
+
+# License
+
+MIT License

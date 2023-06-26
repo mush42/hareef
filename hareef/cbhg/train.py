@@ -66,14 +66,6 @@ def main():
     loss_early_stop_callback = EarlyStopping(
         monitor="val_loss", min_delta=0.00, patience=5, mode="min", strict=True
     )
-    accuracy_early_stop_callback = EarlyStopping(
-        monitor="val_accuracy",
-        min_delta=0.00,
-        patience=5,
-        stopping_threshold=0.99,
-        mode="max",
-        strict=True,
-    )
     if config.config["use_mixed_precision"]:
         _LOGGER.info("Configuring automatic mixed precision")
         mp = (
@@ -92,7 +84,6 @@ def main():
         check_val_every_n_epoch=config.config["evaluate_epoches"],
         callbacks=[
             loss_early_stop_callback,
-            accuracy_early_stop_callback,
             checkpoint_save_callback,
         ],
         plugins=plugins,
