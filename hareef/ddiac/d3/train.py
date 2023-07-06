@@ -4,6 +4,7 @@ import argparse
 import functools
 import json
 import logging
+import os
 import random
 from pathlib import Path
 
@@ -14,9 +15,9 @@ from lightning import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
-from .config import Config
-from .dataset import load_test_data, load_training_data, load_validation_data
-from .model import CBHGModel
+from ..config import Config
+from ..dataset import load_training_data, load_val_data, load_test_data
+from .model import DiacritizerD3
 
 _LOGGER = logging.getLogger("hareef.cbhg.train")
 
@@ -25,8 +26,8 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.cbhg.train",
-        description="Training script for hareef.cbhg model.",
+        prog="hareef.ddiac.d2.train",
+        description="Training script for hareef.deep_-diac.d2 model.",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
     choices = ["gpu", "cpu"]
@@ -42,6 +43,9 @@ def main():
     parser.add_argument(
         "--debug", action="store_true", help="Use fast dev mode of lightning"
     )
+    parser.add_argument(
+        '--from-scratch', action="store_true", help="Train D3 without requireing  a pretrained D2 checkpoint."
+    )
 
     args = parser.parse_args()
 
@@ -53,21 +57,22 @@ def main():
     torch.backends.cudnn.benchmark = False
 
     config = Config(args.config)
-    logs_root_directory = Path(config["logs_root_directory"])
+
+    logs_root_directory = Path(config["paths"]["logs"])
     logs_root_directory.mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f"Logs directory: {logs_root_directory}")
 
-    model = CBHGModel(config)
-
     checkpoint_save_callback = ModelCheckpoint(
-        every_n_train_steps=config["model_save_steps"],
-        every_n_epochs=config["model_save_epoches"],
+        every_n_train_steps=config["train"]["model-save-steps"],
+        every_n_epochs=config["train"]["model-save-epochs"],
     )
+    stopping_delta = config["train"]["stopping-delta"]
+    stopping_patience = config["train"]["stopping-patience"]
     loss_early_stop_callback = EarlyStopping(
-        monitor="val_loss", min_delta=0.00, patience=5, mode="min", strict=True
+        monitor="val_loss", min_delta=stopping_delta, patience=stopping_patience, mode="min", strict=True
     )
     plugins = []
-    if config["use_mixed_precision"]:
+    if config["train"]["mixed-precision"]:
         _LOGGER.info("Configuring automatic mixed precision")
         mp = (
             MixedPrecisionPlugin(
@@ -82,13 +87,13 @@ def main():
     trainer = Trainer(
         accelerator=args.accelerator,
         devices=args.devices,
-        check_val_every_n_epoch=config["evaluate_epoches"],
+        check_val_every_n_epoch=config["train"]["evaluate-every-epochs"],
         callbacks=[
             loss_early_stop_callback,
             checkpoint_save_callback,
         ],
         plugins=plugins,
-        max_epochs=config["max_epoches"],
+        max_epochs=config["train"]["max-epoches"],
         enable_progress_bar=True,
         enable_model_summary=True,
         fast_dev_run=args.debug,
@@ -108,18 +113,47 @@ def main():
         _LOGGER.info(f"Continueing training from checkpoint: {args.continue_from}")
         trainer.ckpt_path = args.continue_from
 
+    _LOGGER.info("Initializing model...")
+    model = DiacritizerD3(config)
+
     if args.test:
         _LOGGER.info("Testing loop starting...")
         test_loader = load_test_data(config)
         trainer.test(model, test_loader)
     else:
-        train_loader, val_loader = load_training_data(config), load_validation_data(
-            config
-        )
+        if not os.path.isfile(config["paths"]["d2-checkpoint"] or ""):
+            if  args.from_scratch:
+                _LOGGER.warn(
+                    "You passed `--from_scratch` when starting D3 training.\n"
+                    "This is not recommended\n"
+                    "For more information, please take a look at the paper."
+                )
+            else:
+                raise RuntimeError(
+                    "D3 model training requires a pretrained D2 checkpoint.\n"
+                    "Please add the path to a pretrained D2 checkpoint to the model config\n"
+                    "or pass `--from-scratch` to train the model from scratch"
+                )
+        else:
+            pretrained_dict = torch.load(config["paths"]["d2-checkpoint"], map_location=T.device(model.device))["state_dict"]
+            model_state_dict = model.state_dict()
+            for i, (name, params) in enumerate(pretrained_dict.items()):
+                if name in model_state_dict and i < 41:
+                    model_state_dict[name].copy_(params)
+            model.load_state_dict(model_state_dict)
+            if config["train"]["freeze-base"]:
+                _LOGGER.info("> Freezing Model parameters...")
+                for params in model.parameters():
+                    params.requires_grad = False 
+                for params in model.lstm_decoder.parameters():
+                    params.requires_grad = True 
+                for params in model.classifier.parameters():
+                    params.requires_grad = True 
+        train_loader, val_loader = load_training_data(config), load_val_data(config)
         inference_config_path = logs_root_directory.joinpath("inference-config.json")
         with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
             json.dump(
-                config.text_encoder.dump_tokens(), file, ensure_ascii=False, indent=2
+                "\n", file, ensure_ascii=False, indent=2
             )
         _LOGGER.info(f"Writing inference config to file: `{inference_config_path}`")
         _LOGGER.info("Training loop starting...")

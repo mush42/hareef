@@ -10,9 +10,9 @@ import torch
 from hareef.utils import find_last_checkpoint
 
 from .config import Config
-from .model import CBHGModel
+from .model import ShakkalaModel
 
-_LOGGER = logging.getLogger("hareef.cbhg.export_onnx")
+_LOGGER = logging.getLogger("hareef.shakkala.export_onnx")
 OPSET_VERSION = 15
 
 
@@ -20,7 +20,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.cbhg.export_onnx", description="Export a model checkpoint to onnx"
+        prog="hareef.shakkala.export_onnx", description="Export a model checkpoint to onnx"
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
     parser.add_argument("--seed", type=int, default=1234, help="random seed")
@@ -45,30 +45,34 @@ def main():
         checkpoint_filename, epoch, step = find_last_checkpoint(
             config["logs_root_directory"]
         )
-        model = CBHGModel.load_from_checkpoint(
+        model = ShakkalaModel.load_from_checkpoint(
             checkpoint_filename, map_location="cpu", config=config
         )
         _LOGGER.info(f"Using checkpoint from: epoch={epoch} - step={step}")
         _LOGGER.info(f"file: {checkpoint_filename}")
     else:
-        model = CBHGModel.load_from_checkpoint(
+        model = ShakkalaModel.load_from_checkpoint(
             args.checkpoint, map_location="cpu", config=config
         )
         _LOGGER.info(f"file: {args.checkpoint}")
 
+    def _forward_pass(src):
+        ret = model._infer(src)
+        return ret["diacritics"]
+
+    model._infer = model.forward
+    model.forward = _forward_pass
     model.freeze()
+    model._jit_is_scripting = True
 
     inp_vocab_size = config.len_input_symbols
     dummy_input_length = 50
-    input_sequence = torch.randint(
+    inputs = torch.randint(
         low=0, high=inp_vocab_size, size=(1, dummy_input_length), dtype=torch.long
     )
-    input_sequence_lengths = torch.LongTensor([input_sequence.size(1)])
+    dummy_input = (inputs,)
 
-    dummy_input = (
-        input_sequence,
-        input_sequence_lengths,
-    )
+    model = torch.jit.script(model, example_inputs=dummy_input)
 
     # Export
     torch.onnx.export(
@@ -79,11 +83,10 @@ def main():
         opset_version=OPSET_VERSION,
         export_params=True,
         do_constant_folding=True,
-        input_names=["input", "input_lengths"],
+        input_names=["input"],
         output_names=["output"],
         dynamic_axes={
             "input": {0: "batch_size", 1: "text"},
-            "input_lengths": {0: "batch_size"},
             "output": {0: "batch_size", 1: "diacritics"},
         },
     )

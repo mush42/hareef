@@ -1,0 +1,88 @@
+{
+  "session": "ddiac",
+  "debug": false,
+  "paths": {
+    "base": "./data/ddiac/d2",
+    "logs": "./logs/ddiac/d2",
+    "word-embs": "./data/ddiac/d2/vocab.vec"
+  },
+  "segment": {
+    "train": {
+      "stride": 2,
+      "window": 10,
+      "min-window": 1,
+      "export-map": false,
+      "files": ["train.txt", "val.txt"]
+    },
+    "test": {
+      "stride": 2,
+      "window": 20,
+      "min-window": 1,
+      "export-map": true,
+      "files": ["test.txt"]
+    }
+  },
+  "loader": {
+    "wembs-limit": -1
+  },
+  "train": {
+    "max-epoches": 1000,
+    "batch-size": 64,
+    "char-embed-dim": 32,
+    "mixed-precision": false,
+    "evaluate-every-epochs": 1,
+    "gradient_clip_val": null,
+    "model-save-steps": 500,
+    "model-save-epochs": null,
+    "stopping-delta": 1e-07,
+    "stopping-patience": 3,
+    "max-word-len": 13,
+    "max-sent-len": 10,
+    "rnn-cell": "lstm",
+    "sent-lstm-layers": 2,
+    "word-lstm-layers": 2,
+    "sent-lstm-units": 256,
+    "word-lstm-units": 512,
+    "decoder-units": 256,
+    "markov-signal": true,
+    "sent-dropout": 0.2,
+    "diac-dropout": 0,
+    "final-dropout": 0.2,
+    "sent-mask-zero": false,
+    "lr-factor": 0.5,
+    "lr-patience": 1,
+    "lr-min": 1e-07,
+    "lr-init": 0.002,
+    "weight-decay": 0,
+    "vertical-dropout": 0.25,
+    "recurrent-dropout": 0.25
+  },
+  "predictor": {
+    "batch-size": 32,
+    "gt-signal-prob": 0,
+    "seed-idx": 0
+  },
+  "sentence-break": {
+    "delimiters": [
+      "،",
+      "؛",
+      ",",
+      ";",
+      "«",
+      "»",
+      "{",
+      "}",
+      "(",
+      ")",
+      "[",
+      "]",
+      ".",
+      "*",
+      "-",
+      ":",
+      "?",
+      "!",
+      "؟"
+    ]
+  }
+}

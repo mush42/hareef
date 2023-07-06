@@ -16,17 +16,17 @@ from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
 from .config import Config
 from .dataset import load_test_data, load_training_data, load_validation_data
-from .model import CBHGModel
+from .model import ShakkalaModel
 
-_LOGGER = logging.getLogger("hareef.cbhg.train")
+_LOGGER = logging.getLogger("hareef.shakkala.train")
 
 
 def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.cbhg.train",
-        description="Training script for hareef.cbhg model.",
+        prog="hareef.shakkala.train",
+        description="Training script for hareef.shakkala model.",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
     choices = ["gpu", "cpu"]
@@ -57,7 +57,7 @@ def main():
     logs_root_directory.mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f"Logs directory: {logs_root_directory}")
 
-    model = CBHGModel(config)
+    model = ShakkalaModel(config)
 
     checkpoint_save_callback = ModelCheckpoint(
         every_n_train_steps=config["model_save_steps"],

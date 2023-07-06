@@ -4,18 +4,19 @@ import logging
 import os
 from functools import partial
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import more_itertools
 import torch
-from hareef.learning_rates import cosine_decay_lr_scheduler
+from torch.optim.lr_scheduler import LambdaLR
+from hareef.learning_rates import LearningRateDecay
 from hareef.utils import calculate_error_rates, format_error_rates_as_table, categorical_accuracy
 from lightning.pytorch import LightningModule
 from torch import nn, optim
 
 from .dataset import load_test_data, load_validation_data
 from .diacritizer import TorchCBHGDiacritizer
-from .modules.tacotron_modules import CBHG, Prenet
+from .modules.tacotron import CBHG, Prenet
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -38,8 +39,8 @@ class CBHGModel(LightningModule):
         self.test_step_outputs = {}
         self._init_layers(
             embedding_dim=self.config["embedding_dim"],
-            inp_vocab_size=self.config["len_input_symbols"],
-            targ_vocab_size=self.config["len_target_symbols"],
+            inp_vocab_size=self.config.len_input_symbols,
+            targ_vocab_size=self.config.len_target_symbols,
             use_prenet=self.config["use_prenet"],
             prenet_sizes=self.config["prenet_sizes"],
             cbhg_gru_units=self.config["cbhg_gru_units"],
@@ -55,11 +56,11 @@ class CBHGModel(LightningModule):
         targ_vocab_size: int,
         embedding_dim: int = 512,
         use_prenet: bool = True,
-        prenet_sizes: List[int] = [512, 256],
+        prenet_sizes: list[int] = [512, 256],
         cbhg_gru_units: int = 512,
         cbhg_filters: int = 16,
-        cbhg_projections: List[int] = [128, 256],
-        post_cbhg_layers_units: List[int] = [256, 256],
+        cbhg_projections: list[int] = [128, 256],
+        post_cbhg_layers_units: list[int] = [256, 256],
         post_cbhg_use_batch_norm: bool = True,
     ):
         """
@@ -68,7 +69,7 @@ class CBHGModel(LightningModule):
             targ_vocab_size (int): the number of the target symbols (diacritics)
             embedding_dim (int): the embedding  size
             use_prenet (bool): whether to use prenet or not
-            prenet_sizes (List[int]): the sizes of the prenet networks
+            prenet_sizes (list[int]): the sizes of the prenet networks
             cbhg_gru_units (int): the number of units of the CBHG GRU, which is the last
             layer of the CBHG Model.
             cbhg_filters (int): number of filters used in the CBHG module
@@ -141,30 +142,15 @@ class CBHGModel(LightningModule):
 
     def training_step(self, batch, batch_idx):
         opt = self.optimizers()
-        sch = self.lr_schedulers()
+        scheduler = self.lr_schedulers()
 
         opt.zero_grad()
 
-        batch["src"] = batch["src"].to(self.device)
-        batch["lengths"] = batch["lengths"].to("cpu")
-        batch["target"] = batch["target"].to(self.device)
-        outputs = self(
-            src=batch["src"],
-            lengths=batch["lengths"],
-            target=batch["target"],
-        )
-        predictions = outputs["diacritics"].contiguous()
-        targets = batch["target"].contiguous()
-        predictions = predictions.view(-1, predictions.shape[-1])
-        targets = targets.view(-1)
-        loss = self.criterion(predictions.to(self.device), targets.to(self.device))
-        accuracy = categorical_accuracy(
-            predictions, targets.to(self.device), self.pad_idx
-        )
-        self.training_step_outputs.setdefault("loss", []).append(loss)
-        self.training_step_outputs.setdefault("accuracy", []).append(accuracy)
+        loss, accuracy = self._process_training_batch(batch)
         self.log("loss", loss)
         self.log("accuracy", accuracy)
+        self.training_step_outputs.setdefault("loss", []).append(loss)
+        self.training_step_outputs.setdefault("accuracy", []).append(accuracy)
 
         self.manual_backward(loss)
 
@@ -175,33 +161,14 @@ class CBHGModel(LightningModule):
             )
 
         opt.step()
-        sch.step()
+        scheduler.step()
 
     def validation_step(self, batch, batch_idx):
-        batch["src"] = batch["src"].to(self.device)
-        batch["lengths"] = batch["lengths"].to("cpu")
-        batch["target"] = batch["target"].to(self.device)
-        outputs = self(
-            src=batch["src"],
-            lengths=batch["lengths"],
-            target=batch["target"],
-        )
-        predictions = outputs["diacritics"].contiguous()
-        targets = batch["target"].contiguous()
-        predictions = predictions.view(-1, predictions.shape[-1])
-        targets = targets.view(-1)
-        val_loss = self.criterion(predictions.to(self.device), targets.to(self.device))
-        val_accuracy = categorical_accuracy(
-            predictions, targets.to(self.device), self.pad_idx
-        )
-        self.val_step_outputs.setdefault("val_loss", []).append(val_loss)
-        self.val_step_outputs.setdefault("val_accuracy", []).append(val_accuracy)
-        self.log("val_loss", val_loss)
-        self.log("val_accuracy", val_accuracy)
-        return {"val_loss": val_loss, "val_accuracy": val_accuracy}
+        metrics = self._validate_model(batch, is_test=False)
+        return metrics
 
     def test_step(self, batch, batch_idx):
-        metrics = self.validation_step(batch, batch_idx)
+        metrics = self._validate_model(batch, is_test=True)
         self.test_step_outputs.setdefault("test_loss", []).append(metrics["val_loss"])
         self.test_step_outputs.setdefault("test_accuracy", []).append(
             metrics["val_accuracy"]
@@ -215,11 +182,12 @@ class CBHGModel(LightningModule):
             betas=(self.config["adam_beta1"], self.config["adam_beta2"]),
             weight_decay=self.config["weight_decay"],
         )
-        self.scheduler = cosine_decay_lr_scheduler(
+        self.scheduler = LambdaLR(
             optimizer,
-            self.config["warmup_steps"],
-            self.config["max_epoches"],
-            min_lr=0.0,
+            LearningRateDecay(
+                self.config["learning_rate"],
+                float(self.config["warmup_steps"]),
+            )
         )
         return [optimizer], [self.scheduler]
 
@@ -246,6 +214,48 @@ class CBHGModel(LightningModule):
             Path(self.trainer.log_dir).joinpath("predictions")
         )
         _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
+
+    def _process_training_batch(self, batch):
+        batch["src"] = batch["src"].to(self.device)
+        batch["lengths"] = batch["lengths"].to("cpu")
+        batch["target"] = batch["target"].to(self.device)
+        outputs = self(
+            src=batch["src"],
+            lengths=batch["lengths"],
+            target=batch["target"],
+        )
+        predictions = outputs["diacritics"].contiguous()
+        targets = batch["target"].contiguous()
+        predictions = predictions.view(-1, predictions.shape[-1])
+        targets = targets.view(-1)
+        loss = self.criterion(predictions.to(self.device), targets.to(self.device))
+        accuracy = categorical_accuracy(
+            predictions, targets.to(self.device), self.pad_idx
+        )
+        return loss, accuracy
+
+    def _validate_model(self, batch, is_test=False):
+        batch["src"] = batch["src"].to(self.device)
+        batch["lengths"] = batch["lengths"].to("cpu")
+        batch["target"] = batch["target"].to(self.device)
+        outputs = self(
+            src=batch["src"],
+            lengths=batch["lengths"],
+            target=batch["target"],
+        )
+        predictions = outputs["diacritics"].contiguous()
+        targets = batch["target"].contiguous()
+        predictions = predictions.view(-1, predictions.shape[-1])
+        targets = targets.view(-1)
+        val_loss = self.criterion(predictions.to(self.device), targets.to(self.device))
+        val_accuracy = categorical_accuracy(
+            predictions, targets.to(self.device), self.pad_idx
+        )
+        self.val_step_outputs.setdefault("val_loss", []).append(val_loss)
+        self.val_step_outputs.setdefault("val_accuracy", []).append(val_accuracy)
+        self.log("val_loss", val_loss)
+        self.log("val_accuracy", val_accuracy)
+        return {"val_loss": val_loss, "val_accuracy": val_accuracy}
 
     def _log_epoch_metrics(self, metrics):
         for name, values in metrics.items():

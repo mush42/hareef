@@ -10,8 +10,8 @@ import torch
 from hareef.utils import find_last_checkpoint
 
 from .config import Config
-from .diacritizer import OnnxCBHGDiacritizer, TorchCBHGDiacritizer
-from .model import CBHGModel
+from .diacritizer import OnnxDiacritizer, TorchDiacritizer
+from .model import ShakkalaModel
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -20,7 +20,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.cbhg.infer",
+        prog="hareef.shakkala.infer",
         description="Inference script using Torch or ONNXRuntime",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
@@ -48,7 +48,7 @@ def main():
     config = Config(args.config)
 
     if args.onnx:
-        diacritizer = OnnxCBHGDiacritizer(config, onnx_model=args.onnx)
+        diacritizer = OnnxDiacritizer(config, onnx_model=args.onnx)
     else:
         if not args.checkpoint:
             try:
@@ -64,11 +64,11 @@ def main():
                 )
                 sys.exit(1)
 
-        model = CBHGModel.load_from_checkpoint(
+        model = ShakkalaModel.load_from_checkpoint(
             args.checkpoint, map_location=args.device, config=config
         )
         model.freeze()
-        diacritizer = TorchCBHGDiacritizer(config, model=model)
+        diacritizer = TorchDiacritizer(config, model=model)
 
     sents, infer_time = diacritizer.diacritize_text(args.text)
     _LOGGER.info(f"Inference time (ms): {infer_time}")

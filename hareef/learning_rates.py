@@ -7,6 +7,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 
 class LearningRateDecay:
+
     def __init__(self, lr=0.002, warmup_steps=4000.0) -> None:
         self.lr = lr
         self.warmup_steps = warmup_steps
@@ -67,11 +68,12 @@ class CosineScheduler:
             )
         return self.base_lr
 
-    def adjust_learning_rate(optimizer, global_step):
-        lr = LearningRateDecay()(global_step=global_step)
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = lr
-        return lr
+
+def adjust_learning_rate(optimizer, global_step):
+    lr = LearningRateDecay()(global_step=global_step)
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = lr
+    return lr
 
 
 def cosine_decay_lr_scheduler(optimizer, warmup_steps, total_steps, min_lr=0):

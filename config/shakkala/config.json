@@ -1,0 +1,33 @@
+{
+  "session_name": "Shakkala",
+  "logs_root_directory": "logs/shakkala",
+  "data_directory": "data/shakkala",
+  "is_data_preprocessed": false,
+  "data_separator": "|",
+  "diacritics_separator": "*",
+  "max_len": 315,
+  "embedding_dim": 288,
+  "lstm_dims": [
+    [288, 1],
+    [144, 1],
+    [96, 1]
+  ],
+  "lstm_dropout": 0.2,
+  "learning_rate": 0.002,
+  "batch_size": 32,
+  "optimizer_type": "Adam",
+  "warmup_steps": 4000,
+  "adam_beta1": 0.9,
+  "adam_beta2": 0.999,
+  "use_decay": true,
+  "weight_decay": 0.0,
+  "use_mixed_precision": true,
+  "max_epoches": 1000,
+  "gradient_clip_val": null,
+  "evaluate_epoches": 1,
+  "evaluate_with_error_rates_epoches": 5,
+  "model_save_steps": 500,
+  "model_save_epoches": null,
+  "error_rates_n_batches": 1000,
+  "n_predicted_text_tensorboard": 10
+}

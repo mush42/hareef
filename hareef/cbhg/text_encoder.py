@@ -4,24 +4,39 @@ import dataclasses
 import typing
 from typing import Any, Optional
 
-from .constants import ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS, PUNCTUATIONS
-from .text_cleaners import valid_arabic_cleaner
+from hareef.text_cleaners import valid_arabic_cleaner
+from hareef.constants import ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS, PUNCTUATIONS, WORD_SEPARATOR
+
+
+PAD = "<PAD>"
+INPUT_TOKENS = [PAD, WORD_SEPARATOR, *sorted(PUNCTUATIONS), *sorted(ARABIC_LETTERS)]
+TARGET_TOKENS = [PAD, *sorted(ALL_POSSIBLE_DIACRITICS)]
+INPUT_ID_MAP = {char: idx for idx, char in enumerate(INPUT_TOKENS)}
+TARGET_ID_MAP = {char: idx for idx, char in enumerate(TARGET_TOKENS)}
+DEFAULT_TOKEN_MAP = {
+    "pad": PAD,
+    "input_id_map": INPUT_ID_MAP,
+    "target_id_map": TARGET_ID_MAP
+}
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class TokenConfig:
-    bos: str
-    eos: str
+class CBHGTokenConfig:
     pad: str
     input_id_map: dict[str, int]
     target_id_map: dict[str, int]
 
+    @classmethod
+    def default(cls):
+        return cls(**DEFAULT_TOKEN_MAP)
 
-class HareefTextEncoder:
+
+
+class CBHGTextEncoder:
     """Clean text, prepare input, and convert output."""
 
-    def __init__(self, config: TokenConfig):
-        self.config = config
+    def __init__(self, config: CBHGTokenConfig=None):
+        self.config = CBHGTokenConfig.default() if config is None else config
 
         self.input_symbols: list[str] = list(self.config.input_id_map.keys())
         self.target_symbols: list[str] = list(self.config.target_id_map.keys())
@@ -36,36 +51,20 @@ class HareefTextEncoder:
             id: char for char, id in self.target_symbol_to_id.items()
         }
 
-        self.bos = self.config.bos
-        self.eos = self.config.eos
         self.pad = self.config.pad
-
-        self.input_bos_id = self.input_symbol_to_id[self.bos]
-        self.input_eos_id = self.input_symbol_to_id[self.eos]
         self.input_pad_id = self.input_symbol_to_id[self.pad]
-
-        self.target_bos_id = self.target_symbol_to_id[self.bos]
-        self.target_eos_id = self.target_symbol_to_id[self.eos]
         self.target_pad_id = self.target_symbol_to_id[self.pad]
 
-        self.meta_input_token_ids = {
-            self.input_bos_id,
-            self.input_eos_id,
-            self.input_pad_id,
-        }
-        self.meta_target_token_ids = {
-            self.target_bos_id,
-            self.target_eos_id,
-            self.target_pad_id,
-        }
+        self.meta_input_token_ids = {self.input_pad_id}
+        self.meta_target_token_ids = {self.target_pad_id,}
 
     def input_to_sequence(self, text: str) -> list[int]:
         seq = [self.input_symbol_to_id[s] for s in text if s != self.pad]
-        return [self.input_bos_id, *seq, self.input_eos_id]
-
+        return seq
+    
     def target_to_sequence(self, text: str) -> list[int]:
         seq = [self.target_symbol_to_id[s] for s in text if s != self.pad]
-        return [self.target_bos_id, *seq, self.target_eos_id]
+        return seq
 
     def sequence_to_input(self, sequence: list[int]):
         return [
@@ -106,8 +105,6 @@ class HareefTextEncoder:
     def dump_tokens(self) -> dict[Any, Any]:
         data = {
             "pad": self.config.pad,
-            "bos": self.config.bos,
-            "eos": self.config.eos,
             "input_id_map": dict(self.input_symbol_to_id),
             "target_id_map": dict(self.target_symbol_to_id),
         }

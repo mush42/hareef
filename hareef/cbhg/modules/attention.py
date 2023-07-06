@@ -1,10 +1,17 @@
+from enum import Enum
 from typing import Optional
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from ..options import AttentionType
+
+class AttentionType(Enum):
+    """Type of attention used during training"""
+
+    LocationSensitive = 1
+    Content_Based = 2
+    MultiHead = 3
 
 
 class BahdanauAttention(nn.Module):

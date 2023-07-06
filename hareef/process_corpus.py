@@ -10,6 +10,7 @@ from pathlib import Path
 
 from diacritization_evaluation.util import extract_haraqat
 from more_itertools import collapse
+from tqdm import tqdm
 
 from .text_cleaners import collapse_whitespace
 
@@ -26,6 +27,9 @@ INVALID_SEQUENCES = {
     "ٍّ": "ٍّ",
     "ٌّ": "ٌّ",
     "ّْ": "ّْ",
+    "ًا": "اً",
+    "ٌا": "اٌ",
+    "ٍا": "اٍ",
     " .": ".",
 }
 
@@ -162,9 +166,10 @@ def main(args):
     valid_lines = set(l for l in lines if len(l) <= max_chars)
     invalid_lines = set(lines).difference(valid_lines)
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        sents = executor.map(
+        iterator = executor.map(
             partial(segment_sentences, max_chars), invalid_lines, chunksize=chunksize
         )
+        sents = [s for s in tqdm(iterator, total=len(invalid_lines))]
     lines = [*valid_lines, *collapse(sents)]
     _LOGGER.info(f"Num sentences: {len(lines)}")
 
@@ -172,9 +177,10 @@ def main(args):
         _LOGGER.info("Removing sentences with invalid or no diacritics...")
         total_lines = len(lines)
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            processed_lines = executor.map(
+            iterator = executor.map(
                 validate_diacritics, lines, chunksize=chunksize
             )
+            processed_lines = [pl for pl in tqdm(iterator, total=total_lines)]
         lines = list(filter(None, processed_lines))
         _LOGGER.info(f"Ignored: {total_lines - len(lines)}")
         _LOGGER.info(f"Num valid sentences: {len(lines)}")
@@ -189,7 +195,7 @@ def main(args):
     lines, val_lines = take_sample(lines, n_val)
 
     _LOGGER.info("Making testing dataset...")
-    n_test = args.n_test or round(n_lines * 0.05)
+    n_test = args.n_test or round(n_lines * 0.02)
     lines, test_lines = take_sample(lines, n_test)
 
     _LOGGER.info("Writing lines to text files...")

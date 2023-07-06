@@ -12,8 +12,7 @@ from hareef.utils import find_last_checkpoint, format_error_rates_as_table
 
 from .config import Config
 from .dataset import load_test_data, load_validation_data
-from .diacritizer import OnnxCBHGDiacritizer, TorchCBHGDiacritizer
-from .model import CBHGModel
+from .model import ShakkalaModel
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -22,7 +21,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.cbhg.error_rates",
+        prog="hareef.shakkala.error_rates",
         description="Calculate DER/WER diacritization error rates",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
@@ -68,7 +67,7 @@ def main():
             )
             sys.exit(1)
 
-    model = CBHGModel.load_from_checkpoint(
+    model = ShakkalaModel.load_from_checkpoint(
         args.checkpoint, map_location=args.device, config=config
     )
     model.freeze()

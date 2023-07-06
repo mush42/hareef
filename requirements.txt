@@ -1,3 +1,4 @@
+# General
 lightning==2.0.3
 torch==2.0.1
 tensorboard==2.13.0
@@ -9,3 +10,9 @@ onnxruntime==1.15.0
 more_itertools==9.1.0
 diacritization-evaluation==0.5
 pysbd==0.3.4
+tqdm == 4.65.0
+
+# D3
+PyArabic==0.6.8
+fasttext==0.9.2
+opt_einsum==3.2.1
