@@ -20,7 +20,8 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.shakkala.export_onnx", description="Export a model checkpoint to onnx"
+        prog="hareef.shakkala.export_onnx",
+        description="Export a model checkpoint to onnx",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
     parser.add_argument("--seed", type=int, default=1234, help="random seed")

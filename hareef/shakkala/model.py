@@ -9,118 +9,145 @@ from typing import Optional
 import torch
 from torch.optim.lr_scheduler import LambdaLR
 from hareef.learning_rates import adjust_learning_rate
-from hareef.utils import calculate_error_rates, format_error_rates_as_table, categorical_accuracy
+from hareef.utils import (
+    calculate_error_rates,
+    format_error_rates_as_table,
+    categorical_accuracy,
+)
 from lightning.pytorch import LightningModule
 from torch import nn, optim
 
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
+from .modules.attention import Attention
 from .modules.k_lstm import K_LSTM
+from .modules import markov_lstm
+
 
 
 _LOGGER = logging.getLogger(__package__)
 
 
 class ShakkalaModel(LightningModule):
-    """
-    """
+    """ """
 
     def __init__(self, config):
         super().__init__()
         self.config = config
         self.text_encoder = self.config.text_encoder
-        self.pad_idx = self.config.text_encoder.input_pad_id
-        self.criterion = nn.CrossEntropyLoss(ignore_index=self.pad_idx)
+        self.input_pad_idx = self.text_encoder.input_pad_id
         self.training_step_outputs = {}
         self.val_step_outputs = {}
         self.test_step_outputs = {}
 
+        self.diac_criterion = nn.CrossEntropyLoss(
+            ignore_index=self.input_pad_idx
+        )
+        self.hints_criterion = nn.CrossEntropyLoss(
+            ignore_index=self.input_pad_idx
+        )
         self._build_layers(
             inp_vocab_size=config.len_input_symbols,
             targ_vocab_size=config.len_target_symbols,
             embedding_dim=config["embedding_dim"],
             lstm_dims=config["lstm_dims"],
             lstm_dropout=config["lstm_dropout"],
+            input_pad_idx=self.text_encoder.input_pad_id,
+            target_pad_idx=self.text_encoder.target_pad_id,
         )
 
-    def _build_layers(self, inp_vocab_size, targ_vocab_size, embedding_dim, lstm_dims, lstm_dropout):
-        (lstm1_h, lstm1_n_layers), (lstm2_h, lstm2_n_layers), (lstm3_h, lstm3_n_layers) = lstm_dims
-        self.embedding = nn.Embedding(inp_vocab_size, embedding_dim, padding_idx=self.pad_idx)
-        self.bidirectional_1 = K_LSTM(
+    def _build_layers(
+        self,
+        inp_vocab_size,
+        targ_vocab_size,
+        embedding_dim,
+        lstm_dims,
+        lstm_dropout,
+        input_pad_idx,
+        target_pad_idx,
+    ):
+        (
+            (diac_enc_dim, diac_enc_layers),
+            (lstm2_h, lstm2_n_layers),
+            (diac_dec_dim, diac_dec_layers),
+        ) = lstm_dims
+        self.diac_embedding = nn.Embedding(
+            inp_vocab_size, embedding_dim, padding_idx=input_pad_idx
+        )
+        self.hints_embedding = nn.Embedding(
+            targ_vocab_size, embedding_dim, padding_idx=target_pad_idx
+        )
+        self.diac_encoder = K_LSTM(
             input_size=embedding_dim,
-            hidden_size=lstm1_h,
-            num_layers=lstm1_n_layers,
+            hidden_size=diac_enc_dim,
+            num_layers=diac_enc_layers,
             batch_first=True,
             bidirectional=True,
             recurrent_activation="hard_sigmoid",
             vertical_dropout=lstm_dropout,
             recurrent_dropout=lstm_dropout,
-            return_states=False
+            return_states=False,
         )
-        self.batch_normalization_1 = nn.BatchNorm1d(
-            num_features=lstm1_h * 2,
-            eps = 1e-3,
+        self.hints_encoder = K_LSTM(
+            input_size=embedding_dim,
+            hidden_size=diac_enc_dim * 2,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=False,
+            recurrent_activation="hard_sigmoid",
+            vertical_dropout=lstm_dropout,
+            recurrent_dropout=lstm_dropout,
+            return_states=False,
+        )
+        self.diac_enc_batchnorm = nn.BatchNorm1d(
+            num_features=diac_enc_dim * 2,
+            eps=1e-3,
             momentum=0.1,
         )
-        self.bidirectional_2 = K_LSTM(
-            input_size=self.batch_normalization_1.num_features,
-            hidden_size=lstm2_h,
-            num_layers=lstm2_n_layers,
-            batch_first=True,
-            bidirectional=True,
-            recurrent_activation="hard_sigmoid",
-            vertical_dropout=lstm_dropout,
-            recurrent_dropout=lstm_dropout,
-            return_states=False
+        self.diac_decoder = markov_lstm.LSTM(
+            cell_class=markov_lstm.LSTMCell,
+            input_size=self.diac_enc_batchnorm.num_features,
+            hidden_size=diac_dec_dim * 2,
+            output_size=diac_dec_dim,
+            num_layers=diac_dec_layers,
+            k_cells=3,
+            dropout_prob=0.2
         )
-        self.bidirectional_3 = K_LSTM(
-            input_size=lstm2_h * 2,
-            hidden_size=lstm3_h,
-            num_layers=lstm3_n_layers,
-            batch_first=True,
-            bidirectional=True,
-            recurrent_activation="hard_sigmoid",
-            vertical_dropout=lstm_dropout,
-            recurrent_dropout=lstm_dropout,
-            return_states=False
-        )
-        self.projections = nn.Linear(lstm3_h * 2, targ_vocab_size)
+        self.projections = nn.Linear(diac_dec_dim * 2, targ_vocab_size)
 
-    def forward(self, src):
-        embedding_out = self.embedding(src)
-        lstm1_out = self.bidirectional_1(embedding_out).tanh()
-        batchnorm_out = self.batch_normalization_1(lstm1_out.transpose(1, 2))
-        lstm2_out = self.bidirectional_2(batchnorm_out.transpose(1, 2)).tanh()
-        lstm3_out = self.bidirectional_3(lstm2_out).tanh()
-        predictions = self.projections(lstm3_out).log_softmax(dim=1)
-        return {
-            "diacritics": predictions
-        }
+    def forward(self, src, hints=None):
+        if hints is None:
+            hints = torch.zeros_like(src)
+        diac_embedding_out = self.diac_embedding(src)
+        hints_embedding_out = self.hints_embedding(hints)
+        diac_enc_out = self.diac_encoder(diac_embedding_out).tanh()
+        hints_enc_out = self.hints_encoder(hints_embedding_out).tanh()
+        enc_out = diac_enc_out + hints_enc_out
+        diac_enc_batchnorm_out = self.diac_enc_batchnorm(enc_out.transpose(1, 2))
+        outs = self.diac_decoder(diac_enc_batchnorm_out.transpose(1, 2), 5.0, is_training=self.training)
+        diac_dec_out = outs[3].tanh()
+        predictions = self.projections(diac_dec_out).log_softmax(dim=1)
+        return {"diacritics": predictions}
 
     def training_step(self, batch, batch_idx):
-        loss, accuracy = self._process_training_batch(batch)
-        self.training_step_outputs.setdefault("loss", []).append(loss.item())
-        self.training_step_outputs.setdefault("accuracy", []).append(accuracy.item())
-        self.log("loss", loss)
-        self.log("accuracy", accuracy)
-        return {"loss": loss, "accuracy": accuracy}
+        metrics = self._process_batch(batch)
+        for name, val in metrics.items():
+            self.training_step_outputs.setdefault(name, []).append(val)
+            self.log(name, val)
+        return metrics["loss"]
 
     def validation_step(self, batch, batch_idx):
-        metrics = self._validate_model(batch, is_test=False)
-        val_loss, val_accuracy = metrics["val_loss"], metrics["val_accuracy"]
-        self.val_step_outputs.setdefault("val_loss", []).append(val_loss)
-        self.val_step_outputs.setdefault("val_accuracy", []).append(val_accuracy)
-        self.log("val_loss", val_loss)
-        self.log("val_accuracy", val_accuracy)
+        metrics = self._process_batch(batch)
+        for name, val in metrics.items():
+            self.val_step_outputs.setdefault(f"val_{name}", []).append(val)
+            self.log(f"val_{name}", val)
         return metrics
 
     def test_step(self, batch, batch_idx):
-        metrics = self._validate_model(batch, is_test=True)
-        val_loss, val_accuracy = metrics["val_loss"], metrics["val_accuracy"]
-        self.test_step_outputs.setdefault("test_loss", []).append(val_loss)
-        self.test_step_outputs.setdefault("test_accuracy", []).append(val_accuracy)
-        self.log("test_loss", val_loss)
-        self.log("test_accuracy", val_accuracy)
+        metrics = self._process_batch(batch)
+        for name, val in metrics.items():
+            self.test_step_outputs.setdefault(f"test_{name}", []).append(val)
+            self.log(f"test_{name}", val)
         return metrics
 
     def configure_optimizers(self):
@@ -133,7 +160,9 @@ class ShakkalaModel(LightningModule):
         lr_factor = 0.2
         lr_patience = 3
         min_lr = 1e-7
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=lr_factor, patience=lr_patience, min_lr=min_lr)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, factor=lr_factor, patience=lr_patience, min_lr=min_lr
+        )
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "loss"}
 
     def on_train_epoch_end(self):
@@ -146,8 +175,7 @@ class ShakkalaModel(LightningModule):
         ] == 0:
             data_loader = load_validation_data(self.config)
             error_rates = self.evaluate_with_error_rates(
-                data_loader,
-                Path(self.trainer.log_dir).joinpath("predictions")
+                data_loader, Path(self.trainer.log_dir).joinpath("predictions")
             )
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
@@ -155,8 +183,7 @@ class ShakkalaModel(LightningModule):
         self._log_epoch_metrics(self.test_step_outputs)
         data_loader = load_test_data(self.config)
         error_rates = self.evaluate_with_error_rates(
-            data_loader,
-            Path(self.trainer.log_dir).joinpath("predictions")
+            data_loader, Path(self.trainer.log_dir).joinpath("predictions")
         )
         _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
@@ -166,33 +193,33 @@ class ShakkalaModel(LightningModule):
             self.log(name, epoch_metric_mean)
             values.clear()
 
-    def _process_training_batch(self, batch):
+    def _process_batch(self, batch):
         batch["src"] = batch["src"].to(self.device)
         batch["target"] = batch["target"].to(self.device)
-        outputs = self(batch["src"])
+        batch["hints"] = batch["hints"].to(self.device)
+        outputs = self(batch["src"], batch["hints"])
         predictions = outputs["diacritics"].contiguous()
         targets = batch["target"].contiguous()
+        hints = batch["hints"].contiguous()
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = targets.view(-1)
-        loss = self.criterion(predictions.to(self.device), targets.to(self.device))
-        accuracy = categorical_accuracy(
-            predictions, targets.to(self.device), self.pad_idx
-        )
-        return loss, accuracy
-
-    def _validate_model(self, batch, is_test=False):
-        batch["src"] = batch["src"].to(self.device)
-        batch["target"] = batch["target"].to(self.device)
-        outputs = self(batch["src"])
-        predictions = outputs["diacritics"].contiguous()
-        targets = batch["target"].contiguous()
-        predictions = predictions.view(-1, predictions.shape[-1])
-        targets = targets.view(-1)
-        val_loss = self.criterion(predictions.to(self.device), targets.to(self.device))
-        val_accuracy = categorical_accuracy(
-            predictions, targets.to(self.device), self.pad_idx
-        )
-        return {"val_loss": val_loss, "val_accuracy": val_accuracy}
+        hints = hints.view(-1)
+        diac_loss = self.diac_criterion(predictions.to(self.device), targets.to(self.device))
+        # Create and apply predictions mask based on hints
+        mask = hints.ne(0).bool()
+        masked_hints = hints[mask]
+        masked_predictions = predictions[mask]
+        hints_loss = self.hints_criterion(masked_predictions.to(self.device), masked_hints.to(self.device))
+        diac_accuracy = categorical_accuracy(predictions, targets.to(self.device), self.input_pad_idx)
+        hints_accuracy = categorical_accuracy(predictions, hints.to(self.device), self.input_pad_idx)
+        loss = (10. * diac_loss) + (3. * hints_loss)
+        return {
+            "loss": loss,
+            "diac_loss": diac_loss,
+            "hints_loss": hints_loss,
+            "diac_accuracy": diac_accuracy,
+            "hints_accuracy": hints_accuracy
+        }
 
     def evaluate_with_error_rates(self, data_loader, predictions_dir):
         predictions_dir = Path(predictions_dir)

@@ -5,13 +5,25 @@ import typing
 from typing import Any, Optional
 
 from hareef.text_cleaners import valid_arabic_cleaner
-from hareef.constants import ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS, PUNCTUATIONS, WORD_SEPARATOR
+from hareef.constants import (
+    ALL_POSSIBLE_DIACRITICS,
+    ARABIC_LETTERS,
+    PUNCTUATIONS,
+    WORD_SEPARATOR,
+)
 
 
 PAD = "<PAD>"
 SOS = "<SOS>"
 EOS = "<EOS>"
-INPUT_TOKENS = [PAD, SOS, EOS, WORD_SEPARATOR, *sorted(PUNCTUATIONS), *sorted(ARABIC_LETTERS)]
+INPUT_TOKENS = [
+    PAD,
+    SOS,
+    EOS,
+    WORD_SEPARATOR,
+    *sorted(PUNCTUATIONS),
+    *sorted(ARABIC_LETTERS),
+]
 TARGET_TOKENS = [PAD, SOS, EOS, *sorted(ALL_POSSIBLE_DIACRITICS)]
 INPUT_ID_MAP = {char: idx for idx, char in enumerate(INPUT_TOKENS)}
 TARGET_ID_MAP = {char: idx for idx, char in enumerate(TARGET_TOKENS)}
@@ -20,7 +32,7 @@ DEFAULT_TOKEN_MAP = {
     "sos": SOS,
     "eos": EOS,
     "input_id_map": INPUT_ID_MAP,
-    "target_id_map": TARGET_ID_MAP
+    "target_id_map": TARGET_ID_MAP,
 }
 
 
@@ -37,11 +49,10 @@ class TokenConfig:
         return cls(**DEFAULT_TOKEN_MAP)
 
 
-
 class TextEncoder:
     """Clean text, prepare input, and convert output."""
 
-    def __init__(self, config: TokenConfig=None):
+    def __init__(self, config: TokenConfig = None):
         self.config = TokenConfig.default() if config is None else config
 
         self.input_symbols: list[str] = list(self.config.input_id_map.keys())
@@ -69,8 +80,16 @@ class TextEncoder:
         self.input_eos_id = self.input_symbol_to_id[self.eos]
         self.target_eos_id = self.target_symbol_to_id[self.eos]
 
-        self.meta_input_token_ids = {self.input_pad_id, self.input_sos_id, self.input_eos_id}
-        self.meta_target_token_ids = {self.target_pad_id, self.target_sos_id, self.target_eos_id}
+        self.meta_input_token_ids = {
+            self.input_pad_id,
+            self.input_sos_id,
+            self.input_eos_id,
+        }
+        self.meta_target_token_ids = {
+            self.target_pad_id,
+            self.target_sos_id,
+            self.target_eos_id,
+        }
 
     def input_to_sequence(self, text: str) -> list[int]:
         seq = [self.input_symbol_to_id[s] for s in text if s != self.pad]

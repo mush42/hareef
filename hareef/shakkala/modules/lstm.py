@@ -13,11 +13,18 @@ from torch.nn.parameter import Parameter
 from torch.nn.utils.rnn import PackedSequence
 import torch.nn.functional as F
 
-class LSTMHardSigmoid(Module):
 
-    def __init__(self, input_size, hidden_size,
-                 num_layers=1, bias=True, batch_first=False,
-                 dropout=0, bidirectional=False):
+class LSTMHardSigmoid(Module):
+    def __init__(
+        self,
+        input_size,
+        hidden_size,
+        num_layers=1,
+        bias=True,
+        batch_first=False,
+        dropout=0,
+        bidirectional=False,
+    ):
         super(LSTMHardSigmoid, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -34,7 +41,9 @@ class LSTMHardSigmoid(Module):
         self._all_weights = []
         for layer in range(num_layers):
             for direction in range(num_directions):
-                layer_input_size = input_size if layer == 0 else hidden_size * num_directions
+                layer_input_size = (
+                    input_size if layer == 0 else hidden_size * num_directions
+                )
 
                 w_ih = Parameter(torch.Tensor(gate_size, layer_input_size))
                 w_hh = Parameter(torch.Tensor(gate_size, hidden_size))
@@ -42,10 +51,10 @@ class LSTMHardSigmoid(Module):
                 b_hh = Parameter(torch.Tensor(gate_size))
                 layer_params = (w_ih, w_hh, b_ih, b_hh)
 
-                suffix = '_reverse' if direction == 1 else ''
-                param_names = ['weight_ih_l{}{}', 'weight_hh_l{}{}']
+                suffix = "_reverse" if direction == 1 else ""
+                param_names = ["weight_ih_l{}{}", "weight_hh_l{}{}"]
                 if bias:
-                    param_names += ['bias_ih_l{}{}', 'bias_hh_l{}{}']
+                    param_names += ["bias_ih_l{}{}", "bias_hh_l{}{}"]
                 param_names = [x.format(layer, suffix) for x in param_names]
 
                 for name, param in zip(param_names, layer_params):
@@ -83,17 +92,23 @@ class LSTMHardSigmoid(Module):
 
         if hx is None:
             num_directions = 2 if self.bidirectional else 1
-            hx = torch.autograd.Variable(input.data.new(self.num_layers *
-                                                        num_directions,
-                                                        max_batch_size,
-                                                        self.hidden_size).zero_(), requires_grad=False)
+            hx = torch.autograd.Variable(
+                input.data.new(
+                    self.num_layers * num_directions, max_batch_size, self.hidden_size
+                ).zero_(),
+                requires_grad=False,
+            )
             hx = (hx, hx)
 
-        has_flat_weights = list(p.data.data_ptr() for p in self.parameters()) == self._data_ptrs
+        has_flat_weights = (
+            list(p.data.data_ptr() for p in self.parameters()) == self._data_ptrs
+        )
         if has_flat_weights:
             first_data = next(self.parameters()).data
             assert first_data.storage().size() == self._param_buf_size
-            flat_weight = first_data.new().set_(first_data.storage(), 0, torch.Size([self._param_buf_size]))
+            flat_weight = first_data.new().set_(
+                first_data.storage(), 0, torch.Size([self._param_buf_size])
+            )
         else:
             flat_weight = None
         func = AutogradRNN(
@@ -106,7 +121,7 @@ class LSTMHardSigmoid(Module):
             bidirectional=self.bidirectional,
             batch_sizes=batch_sizes,
             dropout_state=self.dropout_state,
-            flat_weight=flat_weight
+            flat_weight=flat_weight,
         )
         output, hidden = func(input, self.all_weights, hx)
         if is_packed:
@@ -114,25 +129,25 @@ class LSTMHardSigmoid(Module):
         return output, hidden
 
     def __repr__(self):
-        s = '{name}({input_size}, {hidden_size}'
+        s = "{name}({input_size}, {hidden_size}"
         if self.num_layers != 1:
-            s += ', num_layers={num_layers}'
+            s += ", num_layers={num_layers}"
         if self.bias is not True:
-            s += ', bias={bias}'
+            s += ", bias={bias}"
         if self.batch_first is not False:
-            s += ', batch_first={batch_first}'
+            s += ", batch_first={batch_first}"
         if self.dropout != 0:
-            s += ', dropout={dropout}'
+            s += ", dropout={dropout}"
         if self.bidirectional is not False:
-            s += ', bidirectional={bidirectional}'
-        s += ')'
+            s += ", bidirectional={bidirectional}"
+        s += ")"
         return s.format(name=self.__class__.__name__, **self.__dict__)
 
     def __setstate__(self, d):
         super(LSTMHardSigmoid, self).__setstate__(d)
-        self.__dict__.setdefault('_data_ptrs', [])
-        if 'all_weights' in d:
-            self._all_weights = d['all_weights']
+        self.__dict__.setdefault("_data_ptrs", [])
+        if "all_weights" in d:
+            self._all_weights = d["all_weights"]
         if isinstance(self._all_weights[0][0], str):
             return
         num_layers = self.num_layers
@@ -140,8 +155,13 @@ class LSTMHardSigmoid(Module):
         self._all_weights = []
         for layer in range(num_layers):
             for direction in range(num_directions):
-                suffix = '_reverse' if direction == 1 else ''
-                weights = ['weight_ih_l{}{}', 'weight_hh_l{}{}', 'bias_ih_l{}{}', 'bias_hh_l{}{}']
+                suffix = "_reverse" if direction == 1 else ""
+                weights = [
+                    "weight_ih_l{}{}",
+                    "weight_hh_l{}{}",
+                    "bias_ih_l{}{}",
+                    "bias_hh_l{}{}",
+                ]
                 weights = [x.format(layer, suffix) for x in weights]
                 if self.bias:
                     self._all_weights += [weights]
@@ -150,12 +170,24 @@ class LSTMHardSigmoid(Module):
 
     @property
     def all_weights(self):
-        return [[getattr(self, weight) for weight in weights] for weights in self._all_weights]
+        return [
+            [getattr(self, weight) for weight in weights]
+            for weights in self._all_weights
+        ]
 
-def AutogradRNN(input_size, hidden_size, num_layers=1, batch_first=False,
-                dropout=0, train=True, bidirectional=False, batch_sizes=None,
-                dropout_state=None, flat_weight=None):
 
+def AutogradRNN(
+    input_size,
+    hidden_size,
+    num_layers=1,
+    batch_first=False,
+    dropout=0,
+    train=True,
+    bidirectional=False,
+    batch_sizes=None,
+    dropout_state=None,
+    flat_weight=None,
+):
     cell = LSTMCell
 
     if batch_sizes is None:
@@ -168,11 +200,7 @@ def AutogradRNN(input_size, hidden_size, num_layers=1, batch_first=False,
     else:
         layer = (rec_factory(cell),)
 
-    func = StackedRNN(layer,
-                      num_layers,
-                      True,
-                      dropout=dropout,
-                      train=train)
+    func = StackedRNN(layer, num_layers, True, dropout=dropout, train=train)
 
     def forward(input, weight, hidden):
         if batch_first and batch_sizes is None:
@@ -186,6 +214,7 @@ def AutogradRNN(input_size, hidden_size, num_layers=1, batch_first=False,
         return output, nexth
 
     return forward
+
 
 def Recurrent(inner, reverse=False):
     def forward(input, hidden, weight):
@@ -211,7 +240,9 @@ def variable_recurrent_factory(batch_sizes):
             return VariableRecurrentReverse(batch_sizes, inner)
         else:
             return VariableRecurrent(batch_sizes, inner)
+
     return fac
+
 
 def VariableRecurrent(batch_sizes, inner):
     def forward(input, hidden, weight):
@@ -223,7 +254,7 @@ def VariableRecurrent(batch_sizes, inner):
         if flat_hidden:
             hidden = (hidden,)
         for batch_size in batch_sizes:
-            step_input = input[input_offset:input_offset + batch_size]
+            step_input = input[input_offset : input_offset + batch_size]
             input_offset += batch_size
 
             dec = last_batch_size - batch_size
@@ -262,14 +293,16 @@ def VariableRecurrentReverse(batch_sizes, inner):
         if flat_hidden:
             hidden = (hidden,)
             initial_hidden = (initial_hidden,)
-        hidden = tuple(h[:batch_sizes[-1]] for h in hidden)
+        hidden = tuple(h[: batch_sizes[-1]] for h in hidden)
         for batch_size in reversed(batch_sizes):
             inc = batch_size - last_batch_size
             if inc > 0:
-                hidden = tuple(torch.cat((h, ih[last_batch_size:batch_size]), 0)
-                               for h, ih in zip(hidden, initial_hidden))
+                hidden = tuple(
+                    torch.cat((h, ih[last_batch_size:batch_size]), 0)
+                    for h, ih in zip(hidden, initial_hidden)
+                )
             last_batch_size = batch_size
-            step_input = input[input_offset - batch_size:input_offset]
+            step_input = input[input_offset - batch_size : input_offset]
             input_offset -= batch_size
 
             if flat_hidden:
@@ -286,13 +319,13 @@ def VariableRecurrentReverse(batch_sizes, inner):
 
     return forward
 
-def StackedRNN(inners, num_layers, lstm=False, dropout=0, train=True):
 
+def StackedRNN(inners, num_layers, lstm=False, dropout=0, train=True):
     num_directions = len(inners)
     total_layers = num_layers * num_directions
 
     def forward(input, hidden, weight):
-        assert(len(weight) == total_layers)
+        assert len(weight) == total_layers
         next_hidden = []
 
         if lstm:
@@ -316,15 +349,17 @@ def StackedRNN(inners, num_layers, lstm=False, dropout=0, train=True):
             next_h, next_c = zip(*next_hidden)
             next_hidden = (
                 torch.cat(next_h, 0).view(total_layers, *next_h[0].size()),
-                torch.cat(next_c, 0).view(total_layers, *next_c[0].size())
+                torch.cat(next_c, 0).view(total_layers, *next_c[0].size()),
             )
         else:
             next_hidden = torch.cat(next_hidden, 0).view(
-                total_layers, *next_hidden[0].size())
+                total_layers, *next_hidden[0].size()
+            )
 
         return next_hidden, input
 
     return forward
+
 
 def LSTMCell(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
     """
@@ -344,6 +379,7 @@ def LSTMCell(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
     hy = outgate * F.tanh(cy)
 
     return hy, cy
+
 
 def hard_sigmoid(x):
     """

@@ -6,6 +6,7 @@ from typing import Dict
 import numpy as np
 import onnxruntime
 import torch
+from diacritization_evaluation.util import extract_haraqat
 from hareef.text_cleaners import diacritics_cleaner, valid_arabic_cleaner
 
 
@@ -17,10 +18,17 @@ class Diacritizer:
         self.text_encoder = self.config.text_encoder
 
     def diacritize_text(self, text: str):
-        text = diacritics_cleaner(valid_arabic_cleaner(text))
-        seq = self.text_encoder.input_to_sequence(text)
+        text = valid_arabic_cleaner(text)
+        text, inputs, diacritics  = extract_haraqat(text)
+        inputs_seq = self.text_encoder.input_to_sequence(inputs)
+        no_diac_id = self.text_encoder.target_symbol_to_id[""]
+        hints_seq = []
+        for diac_id in self.text_encoder.target_to_sequence(diacritics):
+            if diac_id == no_diac_id:
+                diac_id = 0
+            hints_seq.append(diac_id)
         start_time = time.perf_counter()
-        output = self.diacritize_batch(seq)
+        output = self.diacritize_batch(inputs_seq, hints_seq)
         return output, (time.perf_counter() - start_time) * 1000
 
     def diacritize_batch(self, batch):
@@ -39,12 +47,12 @@ class TorchDiacritizer(Diacritizer):
         self.model = model
         self.device = model.device
 
-    def diacritize_batch(self, batch):
+    def diacritize_batch(self, input_seq, hints_seq):
         if self.model is None:
             raise RuntimeError("Called `diacritize_batch` without setting the `model`")
-        batch = torch.LongTensor([batch]).to(self.device)
-        inputs = batch.data
-        outputs = self.model(inputs.to(self.device))
+        inputs = torch.LongTensor([input_seq]).to(self.device)
+        hints = torch.LongTensor([hints_seq]).to(self.device)
+        outputs = self.model(inputs.to(self.device), hints.to(self.device))
         diacritics = outputs["diacritics"]
         predictions = torch.max(diacritics, 2).indices
 
