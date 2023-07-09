@@ -6,7 +6,9 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import torch
+from torch.nn import functional as F
 from torch.optim.lr_scheduler import LambdaLR
 from hareef.learning_rates import adjust_learning_rate
 from hareef.utils import (
@@ -28,7 +30,7 @@ from .modules import markov_lstm
 _LOGGER = logging.getLogger(__package__)
 
 
-class ShakkalaModel(LightningModule):
+class MashcoolModel(LightningModule):
     """ """
 
     def __init__(self, config):
@@ -40,17 +42,15 @@ class ShakkalaModel(LightningModule):
         self.val_step_outputs = {}
         self.test_step_outputs = {}
 
+        self.tau = config["tau0"]
         self.diac_criterion = nn.CrossEntropyLoss(
-            ignore_index=self.input_pad_idx
-        )
-        self.hints_criterion = nn.CrossEntropyLoss(
             ignore_index=self.input_pad_idx
         )
         self._build_layers(
             inp_vocab_size=config.len_input_symbols,
             targ_vocab_size=config.len_target_symbols,
             embedding_dim=config["embedding_dim"],
-            lstm_dims=config["lstm_dims"],
+            lstm_encoder_info=config["lstm_encoder_info"],
             lstm_dropout=config["lstm_dropout"],
             input_pad_idx=self.text_encoder.input_pad_id,
             target_pad_idx=self.text_encoder.target_pad_id,
@@ -61,26 +61,19 @@ class ShakkalaModel(LightningModule):
         inp_vocab_size,
         targ_vocab_size,
         embedding_dim,
-        lstm_dims,
+        lstm_encoder_info,
         lstm_dropout,
         input_pad_idx,
         target_pad_idx,
     ):
-        (
-            (diac_enc_dim, diac_enc_layers),
-            (lstm2_h, lstm2_n_layers),
-            (diac_dec_dim, diac_dec_layers),
-        ) = lstm_dims
+        enc_dim, enc_layers = lstm_encoder_info
         self.diac_embedding = nn.Embedding(
             inp_vocab_size, embedding_dim, padding_idx=input_pad_idx
         )
-        self.hints_embedding = nn.Embedding(
-            targ_vocab_size, embedding_dim, padding_idx=target_pad_idx
-        )
         self.diac_encoder = K_LSTM(
             input_size=embedding_dim,
-            hidden_size=diac_enc_dim,
-            num_layers=diac_enc_layers,
+            hidden_size=enc_dim,
+            num_layers=enc_layers,
             batch_first=True,
             bidirectional=True,
             recurrent_activation="hard_sigmoid",
@@ -88,43 +81,26 @@ class ShakkalaModel(LightningModule):
             recurrent_dropout=lstm_dropout,
             return_states=False,
         )
-        self.hints_encoder = K_LSTM(
-            input_size=embedding_dim,
-            hidden_size=diac_enc_dim * 2,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=False,
-            recurrent_activation="hard_sigmoid",
-            vertical_dropout=lstm_dropout,
-            recurrent_dropout=lstm_dropout,
-            return_states=False,
-        )
-        self.diac_enc_batchnorm = nn.BatchNorm1d(
-            num_features=diac_enc_dim * 2,
+        self.diac_layernorm = nn.LayerNorm(
+            normalized_shape=enc_dim * 2,
             eps=1e-3,
-            momentum=0.1,
         )
         self.diac_decoder = markov_lstm.LSTM(
             cell_class=markov_lstm.LSTMCell,
-            input_size=self.diac_enc_batchnorm.num_features,
-            hidden_size=diac_dec_dim * 2,
-            output_size=diac_dec_dim,
-            num_layers=diac_dec_layers,
-            k_cells=3,
+            input_size=enc_dim * 2,
+            hidden_size=144,
+            output_size=144,
+            num_layers=2,
+            k_cells=4,
             dropout_prob=0.2
         )
-        self.projections = nn.Linear(diac_dec_dim * 2, targ_vocab_size)
+        self.projections = nn.Linear(144, targ_vocab_size)
 
-    def forward(self, src, hints=None):
-        if hints is None:
-            hints = torch.zeros_like(src)
+    def forward(self, src, tau=5.0):
         diac_embedding_out = self.diac_embedding(src)
-        hints_embedding_out = self.hints_embedding(hints)
         diac_enc_out = self.diac_encoder(diac_embedding_out).tanh()
-        hints_enc_out = self.hints_encoder(hints_embedding_out).tanh()
-        enc_out = diac_enc_out + hints_enc_out
-        diac_enc_batchnorm_out = self.diac_enc_batchnorm(enc_out.transpose(1, 2))
-        outs = self.diac_decoder(diac_enc_batchnorm_out.transpose(1, 2), 5.0, is_training=self.training)
+        diac_enc_layernorm_out = self.diac_layernorm(diac_enc_out)
+        outs = self.diac_decoder(diac_enc_layernorm_out, tau, is_training=self.training)
         diac_dec_out = outs[3].tanh()
         predictions = self.projections(diac_dec_out).log_softmax(dim=1)
         return {"diacritics": predictions}
@@ -167,6 +143,7 @@ class ShakkalaModel(LightningModule):
 
     def on_train_epoch_end(self):
         self._log_epoch_metrics(self.training_step_outputs)
+        self.tau = np.maximum(self.config["tau0"] * np.exp(-self.config["anneal_rate"] * self.current_epoch + 1), self.config["min_tau"])
 
     def on_validation_epoch_end(self) -> None:
         self._log_epoch_metrics(self.val_step_outputs)
@@ -196,29 +173,16 @@ class ShakkalaModel(LightningModule):
     def _process_batch(self, batch):
         batch["src"] = batch["src"].to(self.device)
         batch["target"] = batch["target"].to(self.device)
-        batch["hints"] = batch["hints"].to(self.device)
-        outputs = self(batch["src"], batch["hints"])
+        outputs = self(batch["src"], self.tau)
         predictions = outputs["diacritics"].contiguous()
         targets = batch["target"].contiguous()
-        hints = batch["hints"].contiguous()
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = targets.view(-1)
-        hints = hints.view(-1)
         diac_loss = self.diac_criterion(predictions.to(self.device), targets.to(self.device))
-        # Create and apply predictions mask based on hints
-        mask = hints.ne(0).bool()
-        masked_hints = hints[mask]
-        masked_predictions = predictions[mask]
-        hints_loss = self.hints_criterion(masked_predictions.to(self.device), masked_hints.to(self.device))
         diac_accuracy = categorical_accuracy(predictions, targets.to(self.device), self.input_pad_idx)
-        hints_accuracy = categorical_accuracy(predictions, hints.to(self.device), self.input_pad_idx)
-        loss = (10. * diac_loss) + (3. * hints_loss)
         return {
-            "loss": loss,
-            "diac_loss": diac_loss,
-            "hints_loss": hints_loss,
-            "diac_accuracy": diac_accuracy,
-            "hints_accuracy": hints_accuracy
+            "loss": diac_loss,
+            "accuracy": diac_accuracy,
         }
 
     def evaluate_with_error_rates(self, data_loader, predictions_dir):

@@ -16,7 +16,7 @@ from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
 from .config import Config
 from .dataset import load_test_data, load_training_data, load_validation_data
-from .model import ShakkalaModel
+from .model import MashcoolModel
 
 _LOGGER = logging.getLogger("hareef.shakkala.train")
 
@@ -57,7 +57,7 @@ def main():
     logs_root_directory.mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f"Logs directory: {logs_root_directory}")
 
-    model = ShakkalaModel(config)
+    model = MashcoolModel(config)
 
     checkpoint_save_callback = ModelCheckpoint(
         every_n_train_steps=config["model_save_steps"],

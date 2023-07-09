@@ -38,6 +38,6 @@
   "evaluate_with_error_rates_epoches": 5,
   "model_save_steps": 500,
   "model_save_epoches": null,
-  "error_rates_n_batches": 500,
+  "error_rates_n_batches": 1000,
   "n_predicted_text_tensorboard": 10
 }

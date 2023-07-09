@@ -2,13 +2,13 @@
 
 import numpy as np
 import torch as t
-from hareef.shakkala.dataset import load_validation_data
-from hareef.shakkala.config import Config
-from hareef.shakkala.model import ShakkalaModel
+from hareef.mashcool.dataset import load_validation_data
+from hareef.mashcool.config import Config
+from hareef.mashcool.model import  MashcoolModel
 
 
-config = Config("config/shakkala/config.json")
-model = ShakkalaModel(config)
+config = Config("config/mashcool/config.json")
+model = MashcoolModel(config)
 
 
 # viter = iter(load_validation_data(config))
@@ -19,7 +19,5 @@ model = ShakkalaModel(config)
 input_array = np.array([i for i in range(20)])
 input_array = np.expand_dims(input_array, axis=0)
 inputs = t.LongTensor(input_array)
-hints_array = np.array([i for i in range(5)] * 4)
-hints_input = t.LongTensor(np.expand_dims(hints_array, axis=0))
-ret = model(inputs, hints_input)
+ret = model(inputs)
 print(ret)
