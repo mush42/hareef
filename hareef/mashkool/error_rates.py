@@ -12,7 +12,7 @@ from hareef.utils import find_last_checkpoint, format_error_rates_as_table
 
 from .config import Config
 from .dataset import load_test_data, load_validation_data
-from .model import MashcoolModel
+from .model import MashkoolModel
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -67,7 +67,7 @@ def main():
             )
             sys.exit(1)
 
-    model = MashcoolModel.load_from_checkpoint(
+    model = MashkoolModel.load_from_checkpoint(
         args.checkpoint, map_location=args.device, config=config
     )
     model.freeze()

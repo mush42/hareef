@@ -11,7 +11,7 @@ from hareef.utils import find_last_checkpoint
 
 from .config import Config
 from .diacritizer import OnnxDiacritizer, TorchDiacritizer
-from .model import MashcoolModel
+from .model import MashkoolModel
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -63,7 +63,7 @@ def main():
                     "Failed to obtain the path to the last checkpoint", exc_info=True
                 )
 
-        model = MashcoolModel(config)
+        model = MashkoolModel(config)
         model.freeze()
         diacritizer = TorchDiacritizer(config, model=model)
 

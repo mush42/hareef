@@ -179,7 +179,7 @@ class CBHGModel(LightningModule):
         optimizer = optim.Adam(
             self.parameters(),
             lr=self.config["learning_rate"],
-            betas=(self.config["adam_beta1"], self.config["adam_beta2"]),
+            betas=tuple(self.config["adam_betas"]),
             weight_decay=self.config["weight_decay"],
         )
         self.scheduler = LambdaLR(

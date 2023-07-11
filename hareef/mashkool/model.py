@@ -21,16 +21,14 @@ from torch import nn, optim
 
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules.attention import Attention
 from .modules.k_lstm import K_LSTM
-from .modules import markov_lstm
 
 
 
 _LOGGER = logging.getLogger(__package__)
 
 
-class MashcoolModel(LightningModule):
+class MashkoolModel(LightningModule):
     """ """
 
     def __init__(self, config):
@@ -42,7 +40,6 @@ class MashcoolModel(LightningModule):
         self.val_step_outputs = {}
         self.test_step_outputs = {}
 
-        self.tau = config["tau0"]
         self.diac_criterion = nn.CrossEntropyLoss(
             ignore_index=self.input_pad_idx
         )
@@ -50,7 +47,7 @@ class MashcoolModel(LightningModule):
             inp_vocab_size=config.len_input_symbols,
             targ_vocab_size=config.len_target_symbols,
             embedding_dim=config["embedding_dim"],
-            lstm_encoder_info=config["lstm_encoder_info"],
+            lstm_info=config["lstm_info"],
             lstm_dropout=config["lstm_dropout"],
             input_pad_idx=self.text_encoder.input_pad_id,
             target_pad_idx=self.text_encoder.target_pad_id,
@@ -61,49 +58,71 @@ class MashcoolModel(LightningModule):
         inp_vocab_size,
         targ_vocab_size,
         embedding_dim,
-        lstm_encoder_info,
+        lstm_info,
         lstm_dropout,
         input_pad_idx,
         target_pad_idx,
     ):
-        enc_dim, enc_layers = lstm_encoder_info
-        self.diac_embedding = nn.Embedding(
-            inp_vocab_size, embedding_dim, padding_idx=input_pad_idx
+        (
+            (lstm1_dim, lstm1_num_layers),
+            (lstm2_dim, lstm2_num_layers),
+            (lstm3_dim, lstm3_num_layers),
+        ) = lstm_info
+        self.char_embedding = nn.Embedding(
+            inp_vocab_size * 2, embedding_dim, padding_idx=input_pad_idx
         )
-        self.diac_encoder = K_LSTM(
+        self.char_embedding.apply(
+            lambda m: nn.init.uniform_(m.weight, -0.05, 0.05)
+        )
+        self.lstm1 = K_LSTM(
             input_size=embedding_dim,
-            hidden_size=enc_dim,
-            num_layers=enc_layers,
+            hidden_size=lstm1_dim,
+            num_layers=lstm1_num_layers,
             batch_first=True,
             bidirectional=True,
             recurrent_activation="hard_sigmoid",
-            vertical_dropout=lstm_dropout,
             recurrent_dropout=lstm_dropout,
-            return_states=False,
+            vertical_dropout=lstm_dropout,
+            tied_forget_gate=True,
+            return_states=True
         )
-        self.diac_layernorm = nn.LayerNorm(
-            normalized_shape=enc_dim * 2,
+        self.layernorm1 = nn.LayerNorm(
+            normalized_shape=lstm1_dim * 2,
             eps=1e-3,
         )
-        self.diac_decoder = markov_lstm.LSTM(
-            cell_class=markov_lstm.LSTMCell,
-            input_size=enc_dim * 2,
-            hidden_size=144,
-            output_size=144,
-            num_layers=2,
-            k_cells=4,
-            dropout_prob=0.2
+        self.lstm2 = K_LSTM(
+            input_size=lstm1_dim * 2,
+            hidden_size=lstm2_dim,
+            num_layers=lstm2_num_layers,
+            batch_first=True,
+            bidirectional=True,
+            recurrent_activation="hard_sigmoid",
+            recurrent_dropout=lstm_dropout,
+            vertical_dropout=lstm_dropout,
+            tied_forget_gate=True,
+            return_states=True
         )
-        self.projections = nn.Linear(144, targ_vocab_size)
+        self.lstm3 = K_LSTM(
+            input_size=lstm2_dim * 2,
+            hidden_size=lstm3_dim,
+            num_layers=lstm3_num_layers,
+            batch_first=True,
+            bidirectional=True,
+            recurrent_activation="hard_sigmoid",
+            recurrent_dropout=lstm_dropout,
+            vertical_dropout=lstm_dropout,
+            tied_forget_gate=True,
+            return_states=True
+        )
+        self.projections = nn.Linear(lstm3_dim * 2, targ_vocab_size)
 
-    def forward(self, src, tau=5.0):
-        diac_embedding_out = self.diac_embedding(src)
-        diac_enc_out = self.diac_encoder(diac_embedding_out).tanh()
-        diac_enc_layernorm_out = self.diac_layernorm(diac_enc_out)
-        outs = self.diac_decoder(diac_enc_layernorm_out, tau, is_training=self.training)
-        diac_dec_out = outs[3].tanh()
-        predictions = self.projections(diac_dec_out).log_softmax(dim=1)
-        return {"diacritics": predictions}
+    def forward(self, src):
+        char_embedding_out = self.char_embedding(src)
+        lstm1_out, lstm1_state = self.lstm1(char_embedding_out)
+        lstm2_out, lstm2_state =  self.lstm2(self.layernorm1(lstm1_out.tan()))
+        lstm3_out, lstm3_state = self.lstm3(lstm2_out.tanh())
+        predictions = self.projections(lstm3_out.tanh()).log_softmax(dim=1)
+        return {"diacritics": predictions.squeeze(2)}
 
     def training_step(self, batch, batch_idx):
         metrics = self._process_batch(batch)
@@ -130,7 +149,7 @@ class MashcoolModel(LightningModule):
         optimizer = optim.Adam(
             self.parameters(),
             lr=self.config["learning_rate"],
-            betas=(self.config["adam_beta1"], self.config["adam_beta2"]),
+            betas=tuple(self.config["adam_betas"]),
             weight_decay=self.config["weight_decay"],
         )
         lr_factor = 0.2
@@ -143,7 +162,6 @@ class MashcoolModel(LightningModule):
 
     def on_train_epoch_end(self):
         self._log_epoch_metrics(self.training_step_outputs)
-        self.tau = np.maximum(self.config["tau0"] * np.exp(-self.config["anneal_rate"] * self.current_epoch + 1), self.config["min_tau"])
 
     def on_validation_epoch_end(self) -> None:
         self._log_epoch_metrics(self.val_step_outputs)
@@ -173,7 +191,7 @@ class MashcoolModel(LightningModule):
     def _process_batch(self, batch):
         batch["src"] = batch["src"].to(self.device)
         batch["target"] = batch["target"].to(self.device)
-        outputs = self(batch["src"], self.tau)
+        outputs = self(batch["src"])
         predictions = outputs["diacritics"].contiguous()
         targets = batch["target"].contiguous()
         predictions = predictions.view(-1, predictions.shape[-1])

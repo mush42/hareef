@@ -2,13 +2,13 @@
 
 import numpy as np
 import torch as t
-from hareef.mashcool.dataset import load_validation_data
-from hareef.mashcool.config import Config
-from hareef.mashcool.model import  MashcoolModel
+from hareef.mashkool.dataset import load_validation_data
+from hareef.mashkool.config import Config
+from hareef.mashkool.model import  MashkoolModel
 
 
-config = Config("config/mashcool/config.json")
-model = MashcoolModel(config)
+config = Config("config/mashkool/config.json")
+model = MashkoolModel(config)
 
 
 # viter = iter(load_validation_data(config))

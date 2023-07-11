@@ -10,7 +10,7 @@ import torch
 from hareef.utils import find_last_checkpoint
 
 from .config import Config
-from .model import MashcoolModel
+from .model import MashkoolModel
 
 _LOGGER = logging.getLogger("hareef.shakkala.export_onnx")
 OPSET_VERSION = 15
@@ -46,13 +46,13 @@ def main():
         checkpoint_filename, epoch, step = find_last_checkpoint(
             config["logs_root_directory"]
         )
-        model = MashcoolModel.load_from_checkpoint(
+        model = MashkoolModel.load_from_checkpoint(
             checkpoint_filename, map_location="cpu", config=config
         )
         _LOGGER.info(f"Using checkpoint from: epoch={epoch} - step={step}")
         _LOGGER.info(f"file: {checkpoint_filename}")
     else:
-        model = MashcoolModel.load_from_checkpoint(
+        model = MashkoolModel.load_from_checkpoint(
             args.checkpoint, map_location="cpu", config=config
         )
         _LOGGER.info(f"file: {args.checkpoint}")
