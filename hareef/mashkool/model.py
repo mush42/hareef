@@ -21,9 +21,8 @@ from torch import nn, optim
 
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules.k_lstm import K_LSTM
 from .modules.attentions import MultiHeadAttention
-
+from .modules.k_lstm import K_LSTM
 
 
 _LOGGER = logging.getLogger(__package__)
@@ -124,6 +123,7 @@ class MashkoolModel(LightningModule):
             out_channels=lstm3_dim * 2,
             n_heads=6,
             p_dropout=lstm_dropout,
+            proximal_bias=True,
             proximal_init=True
         )
         self.projections = nn.Linear(lstm3_dim * 2, targ_vocab_size)
@@ -170,11 +170,11 @@ class MashkoolModel(LightningModule):
             betas=tuple(self.config["adam_betas"]),
             eps=1e-7
         )
-        lr_factor = 0.2
-        lr_patience = 3
-        min_lr = 1e-7
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, factor=lr_factor, patience=lr_patience, min_lr=min_lr
+            optimizer,
+            factor=self.config["lr_factor"],
+            patience=self.config["lr_patience"],
+            min_lr=self.config["min_lr"]
         )
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "loss"}
 
