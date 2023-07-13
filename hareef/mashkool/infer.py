@@ -20,7 +20,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.shakkala.infer",
+        prog="hareef.mashkool.infer",
         description="Inference script using Torch or ONNXRuntime",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
@@ -62,8 +62,9 @@ def main():
                 _LOGGER.exception(
                     "Failed to obtain the path to the last checkpoint", exc_info=True
                 )
+                sys.exit(-1)
 
-        model = MashkoolModel(config)
+        model = MashkoolModel.load_from_checkpoint(args.checkpoint, config=config)
         model.freeze()
         diacritizer = TorchDiacritizer(config, model=model)
 

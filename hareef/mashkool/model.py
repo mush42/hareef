@@ -22,6 +22,7 @@ from torch import nn, optim
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
 from .modules.k_lstm import K_LSTM
+from .modules.attentions import MultiHeadAttention
 
 
 
@@ -34,23 +35,23 @@ class MashkoolModel(LightningModule):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.text_encoder = self.config.text_encoder
-        self.input_pad_idx = self.text_encoder.input_pad_id
+        self.input_pad_idx = self.config.text_encoder.input_pad_id
+        self.target_pad_idx = self.config.text_encoder.target_pad_id
+
         self.training_step_outputs = {}
         self.val_step_outputs = {}
         self.test_step_outputs = {}
 
-        self.diac_criterion = nn.CrossEntropyLoss(
-            ignore_index=self.input_pad_idx
-        )
+        self.diacritics_loss = nn.CrossEntropyLoss(ignore_index=self.target_pad_idx)
         self._build_layers(
             inp_vocab_size=config.len_input_symbols,
             targ_vocab_size=config.len_target_symbols,
             embedding_dim=config["embedding_dim"],
+            max_len=config["max_len"],
             lstm_info=config["lstm_info"],
             lstm_dropout=config["lstm_dropout"],
-            input_pad_idx=self.text_encoder.input_pad_id,
-            target_pad_idx=self.text_encoder.target_pad_id,
+            input_pad_idx=self.config.text_encoder.input_pad_id,
+            target_pad_idx=self.config.text_encoder.target_pad_id,
         )
 
     def _build_layers(
@@ -58,6 +59,7 @@ class MashkoolModel(LightningModule):
         inp_vocab_size,
         targ_vocab_size,
         embedding_dim,
+        max_len,
         lstm_info,
         lstm_dropout,
         input_pad_idx,
@@ -69,10 +71,7 @@ class MashkoolModel(LightningModule):
             (lstm3_dim, lstm3_num_layers),
         ) = lstm_info
         self.char_embedding = nn.Embedding(
-            inp_vocab_size * 2, embedding_dim, padding_idx=input_pad_idx
-        )
-        self.char_embedding.apply(
-            lambda m: nn.init.uniform_(m.weight, -0.05, 0.05)
+            inp_vocab_size, embedding_dim, padding_idx=input_pad_idx
         )
         self.lstm1 = K_LSTM(
             input_size=embedding_dim,
@@ -83,13 +82,17 @@ class MashkoolModel(LightningModule):
             recurrent_activation="hard_sigmoid",
             recurrent_dropout=lstm_dropout,
             vertical_dropout=lstm_dropout,
-            tied_forget_gate=True,
             return_states=True
         )
         self.layernorm1 = nn.LayerNorm(
             normalized_shape=lstm1_dim * 2,
-            eps=1e-3,
+            eps=1e-6
         )
+        # self.batchnorm1 = nn.BatchNorm1d(
+        # num_features=lstm1_dim * 2,
+        # eps=1e-3,
+        # momentum=0.99
+        # )
         self.lstm2 = K_LSTM(
             input_size=lstm1_dim * 2,
             hidden_size=lstm2_dim,
@@ -99,8 +102,11 @@ class MashkoolModel(LightningModule):
             recurrent_activation="hard_sigmoid",
             recurrent_dropout=lstm_dropout,
             vertical_dropout=lstm_dropout,
-            tied_forget_gate=True,
             return_states=True
+        )
+        self.layernorm2 = nn.LayerNorm(
+            normalized_shape=lstm2_dim * 2,
+            eps=1e-6
         )
         self.lstm3 = K_LSTM(
             input_size=lstm2_dim * 2,
@@ -111,18 +117,30 @@ class MashkoolModel(LightningModule):
             recurrent_activation="hard_sigmoid",
             recurrent_dropout=lstm_dropout,
             vertical_dropout=lstm_dropout,
-            tied_forget_gate=True,
             return_states=True
+        )
+        self.attention = MultiHeadAttention(
+            channels=lstm3_dim * 2,
+            out_channels=lstm3_dim * 2,
+            n_heads=6,
+            p_dropout=lstm_dropout,
+            proximal_init=True
         )
         self.projections = nn.Linear(lstm3_dim * 2, targ_vocab_size)
 
     def forward(self, src):
         char_embedding_out = self.char_embedding(src)
         lstm1_out, lstm1_state = self.lstm1(char_embedding_out)
-        lstm2_out, lstm2_state =  self.lstm2(self.layernorm1(lstm1_out.tan()))
-        lstm3_out, lstm3_state = self.lstm3(lstm2_out.tanh())
-        predictions = self.projections(lstm3_out.tanh()).log_softmax(dim=1)
-        return {"diacritics": predictions.squeeze(2)}
+        lstm1_out = self.layernorm1(lstm1_out.tanh())
+        lstm2_out, lstm2_state =  self.lstm2(lstm1_out)
+        lstm2_out = self.layernorm2(lstm2_out.tanh())
+        lstm3_out, lstm3_state = self.lstm3(lstm2_out)
+        lstm3_out = lstm3_out.tanh()
+        attn_input = lstm3_out.permute(0, 2, 1)
+        attn_out = self.attention(attn_input, attn_input)
+        attn_out = attn_out.permute(0, 2, 1)
+        predictions = self.projections(attn_out).log_softmax(dim=2)
+        return {"diacritics": predictions}
 
     def training_step(self, batch, batch_idx):
         metrics = self._process_batch(batch)
@@ -146,11 +164,11 @@ class MashkoolModel(LightningModule):
         return metrics
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(
+        optimizer = optim.AdamW(
             self.parameters(),
             lr=self.config["learning_rate"],
             betas=tuple(self.config["adam_betas"]),
-            weight_decay=self.config["weight_decay"],
+            eps=1e-7
         )
         lr_factor = 0.2
         lr_patience = 3
@@ -196,8 +214,8 @@ class MashkoolModel(LightningModule):
         targets = batch["target"].contiguous()
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = targets.view(-1)
-        diac_loss = self.diac_criterion(predictions.to(self.device), targets.to(self.device))
-        diac_accuracy = categorical_accuracy(predictions, targets.to(self.device), self.input_pad_idx)
+        diac_loss = self.diacritics_loss(predictions.to(self.device), targets.to(self.device))
+        diac_accuracy = categorical_accuracy(predictions.to(self.device), targets.to(self.device), self.target_pad_idx, device=self.device)
         return {
             "loss": diac_loss,
             "accuracy": diac_accuracy,

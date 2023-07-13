@@ -2,11 +2,12 @@
 
 import dataclasses
 import typing
+from itertools import chain
 from typing import Any, Optional
 
 from hareef.text_cleaners import valid_arabic_cleaner
 from hareef.constants import (
-    ALL_POSSIBLE_DIACRITICS,
+    ALL_VALID_DIACRITICS,
     ARABIC_LETTERS,
     PUNCTUATIONS,
     WORD_SEPARATOR,
@@ -21,10 +22,9 @@ INPUT_TOKENS = [
     SOS,
     EOS,
     WORD_SEPARATOR,
-    *sorted(PUNCTUATIONS),
-    *sorted(ARABIC_LETTERS),
+    *sorted(chain(PUNCTUATIONS, ARABIC_LETTERS)),
 ]
-TARGET_TOKENS = [PAD, SOS, EOS, *sorted(ALL_POSSIBLE_DIACRITICS)]
+TARGET_TOKENS = [PAD, SOS, EOS, *sorted(ALL_VALID_DIACRITICS)]
 INPUT_ID_MAP = {char: idx for idx, char in enumerate(INPUT_TOKENS)}
 TARGET_ID_MAP = {char: idx for idx, char in enumerate(TARGET_TOKENS)}
 DEFAULT_TOKEN_MAP = {
@@ -95,24 +95,22 @@ class TextEncoder:
         seq = [self.input_symbol_to_id[s] for s in text if s != self.pad]
         return [self.input_sos_id, *seq, self.input_eos_id]
 
-    def target_to_sequence(self, text: str) -> list[int]:
-        seq = [self.target_symbol_to_id[s] for s in text if s != self.pad]
+    def target_to_sequence(self, diacritics: str) -> list[int]:
+        seq = [self.target_symbol_to_id[s] for s in diacritics if s != self.pad]
         return [self.target_sos_id, *seq, self.target_eos_id]
 
     def sequence_to_input(self, sequence: list[int]):
         return [
             self.input_id_to_symbol[symbol_id]
             for symbol_id in sequence
-            if (symbol_id in self.input_id_to_symbol)
-            and (symbol_id not in self.meta_input_token_ids)
+            if (symbol_id not in self.meta_input_token_ids)
         ]
 
     def sequence_to_target(self, sequence: list[int]):
         return [
             self.target_id_to_symbol[symbol_id]
             for symbol_id in sequence
-            if (symbol_id in self.target_id_to_symbol)
-            and (symbol_id not in self.meta_target_token_ids)
+            if (symbol_id not in self.meta_target_token_ids)
         ]
 
     def clean(self, text):

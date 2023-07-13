@@ -18,15 +18,15 @@ from .config import Config
 from .dataset import load_test_data, load_training_data, load_validation_data
 from .model import MashkoolModel
 
-_LOGGER = logging.getLogger("hareef.shakkala.train")
+_LOGGER = logging.getLogger("hareef.mashkool.train")
 
 
 def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.shakkala.train",
-        description="Training script for hareef.shakkala model.",
+        prog="hareef.mashkool.train",
+        description="Training script for hareef.mashkool model.",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
     choices = ["gpu", "cpu"]

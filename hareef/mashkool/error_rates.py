@@ -21,7 +21,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.shakkala.error_rates",
+        prog="hareef.mashkool.error_rates",
         description="Calculate DER/WER diacritization error rates",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)

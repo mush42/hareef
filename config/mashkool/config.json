@@ -5,7 +5,7 @@
   "is_data_preprocessed": false,
   "data_separator": "|",
   "diacritics_separator": "*",
-  "max_len": 315,
+  "max_len": 280,
   "embedding_dim": 288,
   "lstm_info": [
     [288, 1],
@@ -14,7 +14,7 @@
   ],
   "lstm_dropout": 0.2,
   "learning_rate": 0.002,
-  "batch_size": 32,
+  "batch_size": 96,
   "optimizer_type": "Adam",
   "warmup_steps": 4000,
   "adam_betas": [0.9, 0.999],

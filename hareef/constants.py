@@ -26,27 +26,46 @@ class ArabicDiacritics(enum.Enum):
     SHADDA_PLUS_TANWEEN_FATHA = "ًّ"
     SHADDA_PLUS_TANWEEN_KASRA = "ٍّ"
 
+    @classmethod
+    def chars(cls):
+        return {
+            cls.SUKOON,
+            cls.SHADDA,
+            cls.DAMMA,
+            cls.FATHA,
+            cls.KASRA,
+            cls.TANWEEN_DAMMA,
+            cls.TANWEEN_FATHA,
+            cls.TANWEEN_KASRA,
+        }
 
-BASIC_DIACRITICS = {
-    diac.value
-    for diac in {
-        ArabicDiacritics.SUKOON,
-        ArabicDiacritics.SHADDA,
-        ArabicDiacritics.DAMMA,
-        ArabicDiacritics.FATHA,
-        ArabicDiacritics.KASRA,
-        ArabicDiacritics.TANWEEN_DAMMA,
-        ArabicDiacritics.TANWEEN_FATHA,
-        ArabicDiacritics.TANWEEN_KASRA,
-    }
-}
+    @classmethod
+    def valid(cls):
+        return {
+            cls.NO_DIACRITIC,
+            cls.SUKOON,
+            cls.SHADDA,
+            cls.DAMMA,
+            cls.FATHA,
+            cls.KASRA,
+            cls.TANWEEN_DAMMA,
+            cls.TANWEEN_FATHA,
+            cls.TANWEEN_KASRA,
+            cls.SHADDA_PLUS_DAMMA,
+            cls.SHADDA_PLUS_FATHA,
+            cls.SHADDA_PLUS_KASRA,
+            cls.SHADDA_PLUS_TANWEEN_DAMMA,
+            cls.SHADDA_PLUS_TANWEEN_FATHA,
+            cls.SHADDA_PLUS_TANWEEN_KASRA,
+        }
 
 
 WORD_SEPARATOR = chr(0x20)
 ARABIC_LETTERS = frozenset(
     {chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))}
 )
-PUNCTUATIONS = frozenset({".", "،", ":", "؛", "-", "؟", "!"})
-ALL_POSSIBLE_DIACRITICS = {m.value for m in ArabicDiacritics}
-VALID_ARABIC_CHARS = {WORD_SEPARATOR, *ARABIC_LETTERS, *BASIC_DIACRITICS, *PUNCTUATIONS}
+PUNCTUATIONS = frozenset({".", "،", ":", "؛", "-", "؟", "!", "(", ")", "[", "]", '"', "«", "»",})
+DIACRITIC_CHARS = {diac.value for diac in ArabicDiacritics.chars()}
+ALL_VALID_DIACRITICS = {m.value for m in ArabicDiacritics.valid()} 
+VALID_ARABIC_CHARS = {WORD_SEPARATOR, *ARABIC_LETTERS, *PUNCTUATIONS, *DIACRITIC_CHARS}
 

@@ -12,7 +12,7 @@ from hareef.utils import find_last_checkpoint
 from .config import Config
 from .model import MashkoolModel
 
-_LOGGER = logging.getLogger("hareef.shakkala.export_onnx")
+_LOGGER = logging.getLogger("hareef.mashkool.export_onnx")
 OPSET_VERSION = 15
 
 
@@ -20,7 +20,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.shakkala.export_onnx",
+        prog="hareef.mashkool.export_onnx",
         description="Export a model checkpoint to onnx",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)

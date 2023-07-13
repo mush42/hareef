@@ -46,7 +46,7 @@ class TorchDiacritizer(Diacritizer):
         inputs = torch.LongTensor([input_seq]).to(self.device)
         outputs = self.model(inputs.to(self.device))
         diacritics = outputs["diacritics"]
-        predictions = torch.max(diacritics, 2).indices
+        predictions = torch.argmax(diacritics, 2)
 
         sentences = []
         for src, prediction in zip(inputs, predictions):

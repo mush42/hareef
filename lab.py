@@ -16,8 +16,7 @@ model = MashkoolModel(config)
 # ret = model._process_batch(batch)
 
 
-input_array = np.array([i for i in range(20)])
-input_array = np.expand_dims(input_array, axis=0)
+input_array = np.array([[i for i in range(20)]  * 2]).reshape(2, 20)
 inputs = t.LongTensor(input_array)
 ret = model(inputs)
 print(ret)

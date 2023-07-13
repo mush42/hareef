@@ -18,7 +18,6 @@ _LOGGER = logging.getLogger("hareef.process_corpus")
 
 # Order is critical
 SENTENCE_BOUNDRY_PUNCS = [".", "؟", "!", "،", "؛"]
-
 INVALID_SEQUENCES = {
     "َّ": "َّ",
     "ِّ": "ِّ",
@@ -26,11 +25,10 @@ INVALID_SEQUENCES = {
     "ًّ": "ًّ",
     "ٍّ": "ٍّ",
     "ٌّ": "ٌّ",
-    "ّْ": "ّْ",
+    " .": ".",
     "ًا": "اً",
     "ٌا": "اٌ",
     "ٍا": "اٍ",
-    " .": ".",
 }
 
 

@@ -73,20 +73,10 @@ def collate_fn(data):
     src_seqs, src_lengths = merge(src_seqs)
     trg_seqs, trg_lengths = merge(trg_seqs)
 
-    p = 0.15
-    mask_val = 0
-    mask = torch.bernoulli(torch.full(trg_seqs.shape, p)).bool()
-    mask_view = mask.view(-1)
-    mask_view[[i for i in range(0, mask_view.shape[-1], mask.shape[-1])]] = True
-    for (i, length) in enumerate(trg_lengths):
-        mask[i][length - 1:] = True
-    hints = trg_seqs.masked_fill(mask.logical_not(), mask_val)
-
     batch = {
         "original": original,
         "src": src_seqs,
         "target": trg_seqs,
-        "hints": hints,
         "lengths": torch.LongTensor(src_lengths),  # src_lengths = trg_lengths
     }
     return batch
