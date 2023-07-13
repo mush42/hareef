@@ -64,7 +64,7 @@ def main():
         every_n_epochs=config["model_save_epoches"],
     )
     loss_early_stop_callback = EarlyStopping(
-        monitor="val_loss", min_delta=0.00, patience=5, mode="min", strict=True
+        monitor="val_loss", min_delta=0.00, patience=10, mode="min", strict=True
     )
     plugins = []
     if config["use_mixed_precision"]:
