@@ -24,12 +24,14 @@ from lightning.pytorch import LightningModule
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
 from .modules.attentions import MultiHeadAttention, sequence_mask
+from .modules.positional_encoding import PositionalEncoding
+
 
 
 _LOGGER = logging.getLogger(__package__)
 
 
-class MashkoolGRU(nn.Module):
+class CustomGRU(nn.Module):
     def __init__(self, *args, vertical_dropout=0.0, use_layernorm=False, pad_idx=0.0, **kwargs):
         super().__init__()
         self.dropout = output_dropout = kwargs.pop("dropout", 0.0)
@@ -56,7 +58,90 @@ class MashkoolGRU(nn.Module):
         return self.dropout(output.tanh())
 
 
-class MashkoolModel(LightningModule):
+class TwosDiacEmbedding(nn.Module):
+
+    def __init__(self, vocab_size, dim, max_len, padding_idx=0):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, dim, padding_idx=padding_idx)
+        self.lin = nn.Linear(dim, dim, bias=False)
+        self.pos_enc = PositionalEncoding(dim, dropout_p=0.1, max_len=max_len)
+
+    def forward(self, src):
+        embed_out = self.embedding(src)
+        lin_out = self.lin(embed_out)
+        lin_weighted = lin_out * 16.000000
+        return self.pos_enc(lin_weighted.permute(0, 2, 1)).permute(0, 2, 1)
+
+
+class TwosDiacEncoder(nn.Module):
+
+    def __init__(self, input_dim, output_dim):
+        super().__init__()
+        self.attn_layernorm = nn.LayerNorm(normalized_shape=input_dim)
+        self.attn =             MultiHeadAttention(
+            channels=input_dim,
+            out_channels=input_dim,
+            n_heads=4,
+            p_dropout=0.1,
+            proximal_bias=True,
+            proximal_init=True
+        )
+        self.attn_lin = nn.Linear(input_dim, input_dim, bias=False)
+        self.attn_dropout = nn.Dropout(0.1)
+        self.ff = nn.Sequential(
+            nn.LayerNorm(normalized_shape=input_dim),
+            nn.Linear(input_dim, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, output_dim),
+            nn.Dropout(0.2)
+        )
+
+    def forward(self, x, z, lengths):
+        layernorm_out = self.attn_layernorm(x)
+
+        input_mask = torch.unsqueeze(
+            sequence_mask(lengths, layernorm_out.size(1)), 1
+        ).type_as(layernorm_out)
+
+        attn_input = layernorm_out.permute(0, 2, 1) * input_mask
+        attn_mask = input_mask.unsqueeze(2) * input_mask.unsqueeze(-1)
+        attn_out = self.attn(attn_input, attn_input, attn_mask=attn_mask)
+        attn_out = attn_out.permute(0, 2, 1)
+
+        attn_out = attn_out + z
+
+        output = self.ff(attn_out) + attn_out
+
+        return output, attn_out
+
+
+class TwosDiacDecoder(nn.Module):
+
+    def __init__(self, input_dim, output_dim, max_len):
+        super().__init__()
+        self.layernorm = nn.LayerNorm(normalized_shape=input_dim)
+        self.gru = CustomGRU(
+            input_size=input_dim,
+            hidden_size=input_dim,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.2
+        )
+        self.lin = nn.Linear(input_dim * 2, input_dim, bias=False)
+        self.pos_enc = PositionalEncoding(input_dim, dropout_p=0.1, max_len=max_len)
+        self.projections = nn.Linear(input_dim, output_dim)
+
+    def forward(self, x, lengths):
+        layernorm_out = self.layernorm(x)
+        gru_out = self.gru(layernorm_out, lengths)
+        lin_out = self.lin(gru_out)
+        lin_weighted = lin_out * 16.000000
+        pos_enc = self.pos_enc(lin_out.permute(0, 2, 1)).permute(0, 2, 1)
+        return self.projections(pos_enc).log_softmax(dim=2)
+
+
+class HarakatModel(LightningModule):
     """ """
 
     def __init__(self, config):
@@ -75,10 +160,6 @@ class MashkoolModel(LightningModule):
             targ_vocab_size=config.len_target_symbols,
             embedding_dim=config["embedding_dim"],
             max_len=config["max_len"],
-            gru_info=config["gru_info"],
-            gru_dropout=config["gru_dropout"],
-        attention_num_heads=config["attention_num_heads"],
-            attention_dropout=config["attention_dropout"],
             input_pad_idx=self.config.text_encoder.input_pad_id,
             target_pad_idx=self.config.text_encoder.target_pad_id,
         )
@@ -89,83 +170,38 @@ class MashkoolModel(LightningModule):
         targ_vocab_size,
         embedding_dim,
         max_len,
-        gru_info,
-        gru_dropout,
-        attention_num_heads,
-        attention_dropout,
         input_pad_idx,
         target_pad_idx,
     ):
-        (
-            (gru1_dim, gru1_num_layers),
-            (gru2_dim, gru2_num_layers),
-            (gru3_dim, gru3_num_layers),
-        ) = gru_info
-        self.char_embedding = nn.Embedding(
-            inp_vocab_size, embedding_dim, padding_idx=input_pad_idx
+        self.source_embed = TwosDiacEmbedding(
+            vocab_size=inp_vocab_size,
+            dim=256,
+            max_len=max_len,
+            padding_idx=input_pad_idx
         )
-        self.gru_layers = nn.ModuleList([
-            MashkoolGRU(
-                input_size=embedding_dim,
-                hidden_size=gru1_dim,
-                num_layers=gru1_num_layers,
-                batch_first=True,
-                bidirectional=True,
-                dropout=gru_dropout,
-                use_layernorm=True,
-                pad_idx=input_pad_idx,
-            ),
-            MashkoolGRU(
-                input_size=gru1_dim * 2,
-                hidden_size=gru2_dim,
-                num_layers=gru2_num_layers,
-                batch_first=True,
-                bidirectional=True,
-                dropout=gru_dropout,
-                use_layernorm=True,
-                pad_idx=input_pad_idx,
-            ),
-            MashkoolGRU(
-                input_size=gru2_dim * 2,
-                hidden_size=gru3_dim,
-                num_layers=gru3_num_layers,
-                batch_first=True,
-                bidirectional=True,
-                dropout=gru_dropout,
-                use_layernorm=True,
-                pad_idx=input_pad_idx,
-            ),
+        self.source_embed_diac = TwosDiacEmbedding(
+            vocab_size=targ_vocab_size,
+            dim=256,
+            max_len=max_len,
+            padding_idx=target_pad_idx
+        )
+        self.encoder_layers = nn.ModuleList([
+            TwosDiacEncoder(256, 256)
+            for i in range(6)
         ])
-        gru_output_dim = gru3_dim * 2
-        self.attention = MultiHeadAttention(
-            channels=gru_output_dim,
-            out_channels=gru_output_dim,
-            n_heads=attention_num_heads,
-            p_dropout=attention_dropout,
-            proximal_bias=True,
-            proximal_init=True,
-            window_size=max_len // attention_num_heads
-        )
-        self.projections = nn.Linear(gru_output_dim, targ_vocab_size)
+        self.decoder = TwosDiacDecoder(256, targ_vocab_size, max_len=max_len)
 
-    def forward(self, src: torch.Tensor, lengths: torch.Tensor):
-        char_embedding_out = self.char_embedding(src)
+    def forward(self, src: torch.Tensor, lengths: torch.Tensor, diac: Optional[torch.Tensor]=None):
+        embed_out = self.source_embed(src)
+        if diac is not None:
+            embed_out = embed_out + self.source_embed_diac(diac)
 
-        gru_out = char_embedding_out
-        for gru in self.gru_layers:
-            gru_out = gru(gru_out, lengths)
+        enc_out = prev_attn = embed_out
+        for enc in self.encoder_layers:
+            enc_out, prev_attn = enc(enc_out, prev_attn, lengths)
 
-        input_mask = torch.unsqueeze(
-            sequence_mask(lengths, gru_out.size(1)), 1
-        ).type_as(gru_out)
-        attn_input = gru_out.permute(0, 2, 1) * input_mask
-        attn_mask = input_mask.unsqueeze(2) * input_mask.unsqueeze(-1)
-
-        attn_out = self.attention(attn_input, attn_input, attn_mask=attn_mask)
-        attn_out = attn_out.permute(0, 2, 1)
-
-        predictions = self.projections(attn_out).log_softmax(dim=2)
-        return {"diacritics": predictions}
+        predictions = self.decoder(enc_out, lengths)
+        return {"diacritics": enc_out}
 
     def training_step(self, batch, batch_idx):
         metrics = self._process_batch(batch)

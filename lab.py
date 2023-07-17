@@ -7,7 +7,7 @@ from hareef.mashkool.config import Config
 from hareef.mashkool.model import  MashkoolModel
 
 
-config = Config("config/mashkool/config.json")
+config = Config("config/mashkool/dev.json")
 model = MashkoolModel(config)
 
 
@@ -18,5 +18,6 @@ model = MashkoolModel(config)
 
 input_array = np.array([[i for i in range(20)]  * 2]).reshape(2, 20)
 inputs = t.LongTensor(input_array)
-ret = model(inputs)
+lengths = t.LongTensor([20, 20])
+ret = model(inputs, lengths)
 print(ret)

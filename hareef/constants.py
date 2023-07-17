@@ -59,6 +59,13 @@ class ArabicDiacritics(enum.Enum):
             cls.SHADDA_PLUS_TANWEEN_KASRA,
         }
 
+    @classmethod
+    def diacritic_to_label(cls):
+        return {
+            member.value: name
+            for (name, member) in cls.__members__.items()
+        }
+
 
 WORD_SEPARATOR = chr(0x20)
 ARABIC_LETTERS = frozenset(
@@ -67,5 +74,5 @@ ARABIC_LETTERS = frozenset(
 PUNCTUATIONS = frozenset({".", "،", ":", "؛", "-", "؟", "!", "(", ")", "[", "]", '"', "«", "»",})
 DIACRITIC_CHARS = {diac.value for diac in ArabicDiacritics.chars()}
 ALL_VALID_DIACRITICS = {m.value for m in ArabicDiacritics.valid()} 
+DIACRITIC_LABELS = ArabicDiacritics.diacritic_to_label()
 VALID_ARABIC_CHARS = {WORD_SEPARATOR, *ARABIC_LETTERS, *PUNCTUATIONS, *DIACRITIC_CHARS}
-

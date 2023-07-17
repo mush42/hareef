@@ -4,14 +4,19 @@ import os
 import re
 from itertools import repeat
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import more_itertools
 import numpy as np
 import torch
 from diacritization_evaluation import der, wer
+from diacritization_evaluation import util
 from torch import nn
+
+from hareef.constants import DIACRITIC_LABELS
+from hareef.text_cleaners import valid_arabic_cleaner
+
 
 CHECKPOINT_RE = re.compile(r"epoch=(?P<epoch>[0-9]+)-step=(?P<step>[0-9]+)")
 
@@ -274,3 +279,54 @@ def format_error_rates_as_table(error_rates):
         ("Without CE".ljust(10), [error_rates["DER*"], error_rates["WER*"]]),
     ]
     return format_as_table(*cols)
+
+
+def generate_confusion_matrix(test_lines, pred_lines, plot=False, fig_save_path=None):
+    confusion_dict = {}
+    for test_line, pred_line in zip(test_lines, pred_lines):
+        test_line, pred_line = valid_arabic_cleaner(test_line), valid_arabic_cleaner(pred_line)
+        test_diacritics = util.extract_haraqat(test_line)[-1]
+        pred_diacritics = util.extract_haraqat(pred_line)[-1]
+        assert len(test_diacritics) == len(pred_diacritics), "Ground truth and predictions must be equal in length"
+        for t_d, p_d in zip(test_diacritics, pred_diacritics):
+            try:
+                confusion_dict[t_d][p_d] += 1
+            except KeyError:
+                try:
+                    confusion_dict[t_d][p_d] = 1
+                except KeyError:
+                    confusion_dict[t_d] = {p_d: 1}
+    ys = set()
+    for d in confusion_dict.values():
+        ys = ys.union(d.keys())
+    for info in confusion_dict.values():
+        for p_d in ys:
+            if p_d not in info:
+                info[p_d] = 0
+
+    confusion_matrix = np.array([[confusion_dict[x][y] for y in sorted(ys)] for x in sorted(confusion_dict.keys())])
+    confusion_matrix = confusion_matrix / confusion_matrix.sum(axis=-1, keepdims=True)
+    plt.figure(dpi=150)
+    plt.imshow(confusion_matrix, cmap='Blues')
+    plt.ylabel('Test data')
+    plt.xlabel('Predicted data')
+    ax = plt.gca()
+    ax.set_yticks(np.arange(len(confusion_dict)))
+    ax.set_xticks(np.arange(len(ys)))
+    ax.set_yticklabels([DIACRITIC_LABELS.get(x, "None") for x in sorted(confusion_dict.keys())], fontname='Arial', fontsize=7)
+    ax.set_xticklabels([DIACRITIC_LABELS.get(x, "None") for x in sorted(ys)], fontname='Arial', fontsize=7)
+    ax.xaxis.tick_top()
+    ax.xaxis.set_label_position('top')
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="left", va='bottom', rotation_mode="anchor")
+    for i in range(len(confusion_dict)):
+        for j in range(len(ys)):
+            ax.text(j, i, '{:.1%}'.format(confusion_matrix[i, j]), ha="center", va="center", color="slategrey", fontsize=5)
+    plt.tight_layout()
+
+    if fig_save_path:
+        plt.savefig(str(fig_save_path))
+
+    if plot:
+        plt.show()
+
+    return confusion_matrix

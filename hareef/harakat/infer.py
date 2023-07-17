@@ -13,7 +13,7 @@ from pysbd import Segmenter
 
 from .config import Config
 from .diacritizer import OnnxDiacritizer, TorchDiacritizer
-from .model import MashkoolModel
+from .model import HarakatModel
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -22,7 +22,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.mashkool.infer",
+        prog="hareef.harakat.infer",
         description="Inference script using Torch or ONNXRuntime",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
@@ -68,7 +68,7 @@ def main():
                 )
                 sys.exit(-1)
 
-        model = MashkoolModel.load_from_checkpoint(args.checkpoint, config=config)
+        model = HarakatModel.load_from_checkpoint(args.checkpoint, config=config)
         model.freeze()
         diacritizer = TorchDiacritizer(config, model=model)
 

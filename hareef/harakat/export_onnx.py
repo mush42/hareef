@@ -10,9 +10,9 @@ import torch
 from hareef.utils import find_last_checkpoint
 
 from .config import Config
-from .model import MashkoolModel
+from .model import HarakatModel
 
-_LOGGER = logging.getLogger("hareef.mashkool.export_onnx")
+_LOGGER = logging.getLogger("hareef.harakat.export_onnx")
 OPSET_VERSION = 15
 
 
@@ -20,7 +20,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.mashkool.export_onnx",
+        prog="hareef.harakat.export_onnx",
         description="Export a model checkpoint to onnx",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
@@ -46,13 +46,13 @@ def main():
         checkpoint_filename, epoch, step = find_last_checkpoint(
             config["logs_root_directory"]
         )
-        model = MashkoolModel.load_from_checkpoint(
+        model = HarakatModel.load_from_checkpoint(
             checkpoint_filename, map_location="cpu", config=config
         )
         _LOGGER.info(f"Using checkpoint from: epoch={epoch} - step={step}")
         _LOGGER.info(f"file: {checkpoint_filename}")
     else:
-        model = MashkoolModel.load_from_checkpoint(
+        model = HarakatModel.load_from_checkpoint(
             args.checkpoint, map_location="cpu", config=config
         )
         _LOGGER.info(f"file: {args.checkpoint}")
