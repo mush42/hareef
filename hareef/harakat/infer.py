@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--text", dest="text", type=str, required=True)
     split_choices = ['sentence', 'line', 'none']
     parser.add_argument("--split-by", type=str, choices=split_choices, default=split_choices[0], help="Split text  (sentence recommended)")
+    parser.add_argument("--no-hints", action="store_true", help="Strip diacritics from text before inference")
     parser.add_argument("--checkpoint", type=str, required=False)
     parser.add_argument("--onnx", type=str, required=False)
 
@@ -52,7 +53,7 @@ def main():
     config = Config(args.config)
 
     if args.onnx:
-        diacritizer = OnnxDiacritizer(config, onnx_model=args.onnx)
+        diacritizer = OnnxDiacritizer(config, onnx_model=args.onnx, take_hints=not args.no_hints)
     else:
         if not args.checkpoint:
             try:
@@ -70,7 +71,7 @@ def main():
 
         model = HarakatModel.load_from_checkpoint(args.checkpoint, config=config)
         model.freeze()
-        diacritizer = TorchDiacritizer(config, model=model)
+        diacritizer = TorchDiacritizer(config, model=model, take_hints=not args.no_hints)
 
     if args.split_by == 'sentence':
         sent_segmenter = Segmenter(language='ar')

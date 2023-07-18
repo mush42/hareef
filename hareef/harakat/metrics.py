@@ -102,7 +102,7 @@ def main():
 
     if args.onnx:
         _LOGGER.info(f"Using ONNX model from: {args.onnx}")
-        diacritizer = OnnxDiacritizer(config, onnx_model=args.onnx)
+        diacritizer = OnnxDiacritizer(config, take_hints=False, onnx_model=args.onnx)
     else:
         if not args.checkpoint:
             try:
@@ -123,7 +123,7 @@ def main():
                 args.checkpoint, map_location=args.device, config=config
             )
             model.freeze()
-            diacritizer = TorchDiacritizer(config, model=model)
+            diacritizer = TorchDiacritizer(config, take_hints=False, model=model)
 
     data_loader = (
         load_test_data(config, num_workers=0)

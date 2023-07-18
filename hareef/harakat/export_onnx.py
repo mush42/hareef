@@ -59,8 +59,8 @@ def main():
 
     model._infer = model.forward
 
-    def _forward_pass(src, lengths):
-        ret = model._infer(src, lengths)
+    def _forward_pass(char_inputs, diac_inputs, input_lengths):
+        ret = model._infer(char_inputs, diac_inputs, input_lengths)
         return ret["diacritics"]
 
     model.forward = _forward_pass
@@ -68,12 +68,17 @@ def main():
     model._jit_is_scripting = True
 
     inp_vocab_size = config.len_input_symbols
+    targ_vocab_size = config.len_target_symbols
+
     dummy_input_length = 50
-    inputs = torch.randint(
+    char_inputs = torch.randint(
         low=0, high=inp_vocab_size, size=(1, dummy_input_length), dtype=torch.long
     )
+    diac_inputs = torch.randint(
+        low=0, high=targ_vocab_size, size=(1, dummy_input_length), dtype=torch.long
+    )
     input_lengths = torch.LongTensor([dummy_input_length])
-    dummy_input = (inputs, input_lengths)
+    dummy_input = (char_inputs, diac_inputs, input_lengths)
 
     # Export
     torch.onnx.export(
@@ -84,10 +89,11 @@ def main():
         opset_version=OPSET_VERSION,
         export_params=True,
         do_constant_folding=True,
-        input_names=["input", "input_lengths",],
+        input_names=["char_inputs", "diac_inputs", "input_lengths"],
         output_names=["output"],
         dynamic_axes={
-            "input": {0: "batch_size", 1: "text"},
+            "char_inputs": {0: "batch_size", 1: "ar_characters"},
+            "diac_inputs": {0: "batch_size", 1: "ar_diacritics"},
             "input_lengths": {0: "batch_size"},
             "output": {0: "batch_size", 1: "time"},
         },

@@ -59,10 +59,12 @@ def main():
 
     model = MashkoolModel(config)
 
-    checkpoint_save_callback = ModelCheckpoint(
-        every_n_train_steps=config["model_save_steps"],
-        every_n_epochs=config["model_save_epochs"],
-    )
+    checkpoint_save_callbacks = []
+    if config["model_save_steps"]:
+        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_train_steps=config["model_save_steps"]))
+    if config["model_save_epochs"]:
+        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_epochs=config["model_save_epochs"]))
+
     loss_early_stop_callback = EarlyStopping(
         monitor="val_loss", min_delta=0.00, patience=10, mode="min", strict=True
     )
@@ -85,7 +87,7 @@ def main():
         check_val_every_n_epoch=config["evaluate_epochs"],
         callbacks=[
             loss_early_stop_callback,
-            checkpoint_save_callback,
+            *checkpoint_save_callbacks,
         ],
         plugins=plugins,
         max_epochs=config["max_epochs"],

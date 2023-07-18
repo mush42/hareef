@@ -7,11 +7,10 @@
   "diacritics_separator": "*",
   "max_len": 300,
   "embedding_dim": 300,
-  "learning_rate": 0.002,
+  "learning_rate": 0.001,
   "batch_size": 48,
   "warmup_steps": 4000,
   "adam_betas": [0.9, 0.999],
-  "adamw_eps": 1e-7,
   "use_decay": true,
   "weight_decay": 0.0,
   "lr_factor": 0.2,
@@ -23,7 +22,7 @@
   "evaluate_epochs": 1,
   "evaluate_with_error_rates_epochs": 10,
   "model_save_steps": 500,
-  "model_save_epochs": null,
+  "model_save_epochs": 1,
   "error_rates_n_batches": 15,
   "n_predicted_text_tensorboard": 10
 }

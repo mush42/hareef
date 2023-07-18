@@ -21,6 +21,10 @@ from hareef.text_cleaners import valid_arabic_cleaner
 CHECKPOINT_RE = re.compile(r"epoch=(?P<epoch>[0-9]+)-step=(?P<step>[0-9]+)")
 
 
+def clamp(value, min_value, max_value):
+    return max(min(value, max_value), min_value)
+
+
 def plot_alignment(alignment: torch.Tensor, path: str, global_step: Any = 0):
     """
     Plot alignment and save it into a path

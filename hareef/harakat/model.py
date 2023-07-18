@@ -27,8 +27,8 @@ from .modules.attentions import MultiHeadAttention, sequence_mask
 from .modules.positional_encoding import PositionalEncoding
 
 
-
 _LOGGER = logging.getLogger(__package__)
+
 
 
 class CustomGRU(nn.Module):
@@ -129,7 +129,8 @@ class TwosDiacDecoder(nn.Module):
             dropout=0.2
         )
         self.lin = nn.Linear(input_dim * 2, input_dim, bias=False)
-        self.pos_enc = PositionalEncoding(input_dim, dropout_p=0.1, max_len=max_len)
+        # self.pos_enc = PositionalEncoding(input_dim, max_len=max_len)
+        self.dropout = nn.Dropout(0.1)
         self.projections = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, lengths):
@@ -137,8 +138,9 @@ class TwosDiacDecoder(nn.Module):
         gru_out = self.gru(layernorm_out, lengths)
         lin_out = self.lin(gru_out)
         lin_weighted = lin_out * 16.000000
-        pos_enc = self.pos_enc(lin_out.permute(0, 2, 1)).permute(0, 2, 1)
-        return self.projections(pos_enc).log_softmax(dim=2)
+        #output = self.pos_enc(lin_out.permute(0, 2, 1)).permute(0, 2, 1)
+        output = self.dropout(lin_out)
+        return self.projections(output).log_softmax(dim=2)
 
 
 class HarakatModel(LightningModule):
@@ -191,17 +193,16 @@ class HarakatModel(LightningModule):
         ])
         self.decoder = TwosDiacDecoder(256, targ_vocab_size, max_len=max_len)
 
-    def forward(self, src: torch.Tensor, lengths: torch.Tensor, diac: Optional[torch.Tensor]=None):
-        embed_out = self.source_embed(src)
-        if diac is not None:
-            embed_out = embed_out + self.source_embed_diac(diac)
+    def forward(self, char_inputs: torch.Tensor, diac_inputs: torch.Tensor, input_lengths: torch.Tensor):
+        embed_out = self.source_embed(char_inputs) + self.source_embed_diac(diac_inputs)
 
         enc_out = prev_attn = embed_out
         for enc in self.encoder_layers:
-            enc_out, prev_attn = enc(enc_out, prev_attn, lengths)
+            enc_out, prev_attn = enc(enc_out, prev_attn, input_lengths)
 
-        predictions = self.decoder(enc_out, lengths)
-        return {"diacritics": enc_out}
+        predictions = self.decoder(enc_out, input_lengths)
+
+        return {"diacritics": predictions}
 
     def training_step(self, batch, batch_idx):
         metrics = self._process_batch(batch)
@@ -225,11 +226,11 @@ class HarakatModel(LightningModule):
         return metrics
 
     def configure_optimizers(self):
-        optimizer = optim.AdamW(
+        optimizer = optim.Adam(
             self.parameters(),
             lr=self.config["learning_rate"],
             betas=tuple(self.config["adam_betas"]),
-            eps=self.config["adamw_eps"]
+            weight_decay=self.config["weight_decay"],
         )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
@@ -248,7 +249,7 @@ class HarakatModel(LightningModule):
             "evaluate_with_error_rates_epochs"
         ] == 0:
             data_loader = load_validation_data(self.config)
-            diacritizer = TorchDiacritizer(self.config, model=self)
+            diacritizer = TorchDiacritizer(self.config, take_hints=False, model=self)
             error_rates = self.evaluate_with_error_rates(
                 diacritizer,
                 data_loader=data_loader,
@@ -267,7 +268,7 @@ class HarakatModel(LightningModule):
     def on_test_epoch_end(self) -> None:
         self._log_epoch_metrics(self.test_step_outputs)
         data_loader = load_test_data(self.config)
-        diacritizer = TorchDiacritizer(self.config, model=self)
+        diacritizer = TorchDiacritizer(self.config, take_hints=False, model=self)
         error_rates = self.evaluate_with_error_rates(
             diacritizer,
             data_loader=data_loader,
@@ -286,7 +287,7 @@ class HarakatModel(LightningModule):
         batch["src"] = batch["src"].to(self.device)
         batch["target"] = batch["target"].to(self.device)
         batch["lengths"] = batch["lengths"].to('cpu')
-        outputs = self(batch["src"], batch["lengths"])
+        outputs = self(batch["src"], batch["diac"], batch["lengths"])
         predictions = outputs["diacritics"].contiguous()
         targets = batch["target"].contiguous()
         predictions = predictions.view(-1, predictions.shape[-1])
