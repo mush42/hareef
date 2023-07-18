@@ -31,7 +31,7 @@
   "evaluate_epochs": 1,
   "evaluate_with_error_rates_epochs": 20,
   "model_save_steps": null,
-  "model_save_epochs": 50,
+  "model_save_epochs": 10,
   "error_rates_n_batches": 15,
   "n_predicted_text_tensorboard": 10
 }
