@@ -16,7 +16,7 @@
   "attention_dropout": 0.3,
   "attention_num_heads": 8,
   "learning_rate": 0.002,
-  "batch_size": 1024,
+  "batch_size": 512,
   "warmup_steps": 4000,
   "adam_betas": [0.9, 0.999],
   "adamw_eps": 1e-7,
