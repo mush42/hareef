@@ -19,11 +19,11 @@ from .model import HarakatModel
 _LOGGER = logging.getLogger(__package__)
 
 
-def error_rates(diacritizer, data_loader, num_batches):
+def error_rates(diacritizer, data_loader, num_batches, hint_p):
     _LOGGER.info("Calculating DER/WER statistics...")
     try:
         with TemporaryDirectory() as predictions_dir:
-            error_rates = HarakatModel.evaluate_with_error_rates(diacritizer, data_loader, num_batches=num_batches, predictions_dir=predictions_dir)
+            error_rates = HarakatModel.evaluate_with_error_rates(diacritizer, data_loader, num_batches=num_batches, predictions_dir=predictions_dir, hint_p=hint_p)
     except:
         _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
         sys.exit(1)
@@ -82,6 +82,8 @@ def main():
     err_rates_parser = subparsers.add_parser("err_rates", help="Calculate DER/WER statistics")
     conmat_parser = subparsers.add_parser("conmat", help="Calculate and plot confusion matrix")
 
+    err_rates_parser.add_argument("--hint-p", type=float, required=False, default=None, help="How many hints to give to the model")
+
     conmat_parser.add_argument("--plot", action="store_true", help="Show confusion matrix plot")
     conmat_parser.add_argument("--fig-save-path", type=str, help="Save confusion matrix plot to the specified path")
 
@@ -133,7 +135,13 @@ def main():
 
     if args.subcommand == 'err_rates':
         num_batches = args.num_batches or 15
-        return error_rates(diacritizer, data_loader, num_batches=num_batches)
+        if args.hint_p:
+            diacritizer.take_hints = True
+            _LOGGER.info("Evaluating with hints")
+            _LOGGER.info(f"Hint probability: {args.hint_p}")
+        else:
+            _LOGGER.info("Evaluating with no hints")
+        return error_rates(diacritizer, data_loader, num_batches=num_batches, hint_p=args.hint_p)
     elif args.subcommand == 'conmat':
         num_batches = args.num_batches or 20
         return confusion_matrix(diacritizer, data_loader, num_batches=num_batches, plot=args.plot, fig_save_path=args.fig_save_path)

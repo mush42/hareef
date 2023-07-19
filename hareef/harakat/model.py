@@ -2,6 +2,7 @@
 
 import logging
 import os
+import random
 from functools import partial
 from pathlib import Path
 from typing import Optional, Tuple
@@ -13,6 +14,7 @@ from torch.nn import functional as F
 from torch import nn, optim
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim.lr_scheduler import LambdaLR
+from diacritization_evaluation.util import extract_haraqat
 from hareef.learning_rates import adjust_learning_rate
 from hareef.utils import (
     calculate_error_rates,
@@ -299,16 +301,19 @@ class HarakatModel(LightningModule):
             "accuracy": diac_accuracy,
         }
 
-    @staticmethod
-    def evaluate_with_error_rates(diacritizer, data_loader, num_batches, predictions_dir):
+    @classmethod
+    def evaluate_with_error_rates(cls, diacritizer, data_loader, num_batches, predictions_dir, hint_p=None):
         predictions_dir = Path(predictions_dir)
         predictions_dir.mkdir(parents=True, exist_ok=True)
         all_orig = []
         all_predicted = []
         results = {}
         for batch in more_itertools.take(num_batches, data_loader):
-            all_orig.extend(batch["original"])
-            predicted, __ = diacritizer.diacritize_text(batch["original"])
+            gt_lines = batch["original"]
+            if hint_p:
+                gt_lines = cls.apply_hint_mask(gt_lines, hint_p)
+            predicted, __ = diacritizer.diacritize_text(gt_lines)
+            all_orig.extend(gt_lines)
             all_predicted.extend(predicted)
 
         orig_path = os.path.join(predictions_dir, f"original.txt")
@@ -338,3 +343,19 @@ class HarakatModel(LightningModule):
             pred_lines.extend(predictions)
 
         yield from zip(gt_lines, pred_lines)
+
+    @classmethod
+    def apply_hint_mask(cls, lines, hint_p):
+        mask_p = 1 - hint_p
+
+        results = []
+        for line in lines:
+            __, chars, diac = extract_haraqat(line)
+            diac_len = len(diac)
+            for i in random.sample(range(diac_len),  k=round(diac_len * mask_p)):
+                diac[i] = ""
+            results.append(
+                "".join(more_itertools.interleave(chars, diac))
+            )
+
+        return results

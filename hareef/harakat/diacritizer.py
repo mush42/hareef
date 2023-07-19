@@ -51,7 +51,7 @@ class Diacritizer:
             diac_inputs = np.array(diac_seqs, dtype=np.int64)
         else:
             diac_inputs = np.zeros_like(char_inputs, dtype=np.int64)
-        input_lengths = np.array(lengths, dtype=np.int64)
+        input_lengths = np.array([max_len] * len(lengths), dtype=np.int64)
 
         start_time = time.perf_counter()
         predictions = self.diacritize_batch(char_inputs, diac_inputs, input_lengths)
