@@ -34,9 +34,9 @@ class Diacritizer:
         ]
 
         lengths = [len(seq) for seq in char_seqs]
+        max_len = max(lengths)
 
         if len(char_seqs) > 1:
-            max_len = max(lengths)
             char_seqs = [
                 list(padded(seq, fillvalue=self.input_pad_id, n=max_len))
                 for seq in char_seqs
@@ -104,7 +104,7 @@ class OnnxDiacritizer(Diacritizer):
     def diacritize_batch(self, char_inputs, diac_inputs, input_lengths):
         inputs = {
             "char_inputs": char_inputs,
-            "diac_inputs": diac_inputs,
+            #"diac_inputs": diac_inputs,
             "input_lengths": input_lengths,
         }
         output = self.session.run(None, inputs)[0]

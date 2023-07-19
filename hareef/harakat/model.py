@@ -14,6 +14,7 @@ from torch.nn import functional as F
 from torch import nn, optim
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim.lr_scheduler import LambdaLR
+from tqdm import tqdm
 from diacritization_evaluation.util import extract_haraqat
 from hareef.learning_rates import adjust_learning_rate
 from hareef.utils import (
@@ -26,7 +27,6 @@ from lightning.pytorch import LightningModule
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
 from .modules.attentions import MultiHeadAttention, sequence_mask
-from .modules.positional_encoding import PositionalEncoding
 
 
 _LOGGER = logging.getLogger(__package__)
@@ -66,13 +66,20 @@ class TwosDiacEmbedding(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim, padding_idx=padding_idx)
         self.lin = nn.Linear(dim, dim, bias=False)
-        self.pos_enc = PositionalEncoding(dim, dropout_p=0.1, max_len=max_len)
+        self.gru = CustomGRU(
+            input_size=dim,
+            hidden_size=dim // 2,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.2
+        )
 
-    def forward(self, src):
+    def forward(self, src, lengths):
         embed_out = self.embedding(src)
         lin_out = self.lin(embed_out)
         lin_weighted = lin_out * 16.000000
-        return self.pos_enc(lin_weighted.permute(0, 2, 1)).permute(0, 2, 1)
+        return self.gru(lin_weighted, lengths)
 
 
 class TwosDiacEncoder(nn.Module):
@@ -121,8 +128,8 @@ class TwosDiacDecoder(nn.Module):
 
     def __init__(self, input_dim, output_dim, max_len):
         super().__init__()
-        self.layernorm = nn.LayerNorm(normalized_shape=input_dim)
-        self.gru = CustomGRU(
+        self.layernorm1 = nn.LayerNorm(normalized_shape=input_dim)
+        self.gru1 = CustomGRU(
             input_size=input_dim,
             hidden_size=input_dim,
             num_layers=1,
@@ -131,18 +138,25 @@ class TwosDiacDecoder(nn.Module):
             dropout=0.2
         )
         self.lin = nn.Linear(input_dim * 2, input_dim, bias=False)
-        # self.pos_enc = PositionalEncoding(input_dim, max_len=max_len)
-        self.dropout = nn.Dropout(0.1)
+        self.layernorm2 = nn.LayerNorm(normalized_shape=input_dim)
+        self.gru2 = CustomGRU(
+            input_size=input_dim,
+            hidden_size=input_dim // 2,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.1
+        )
         self.projections = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, lengths):
-        layernorm_out = self.layernorm(x)
-        gru_out = self.gru(layernorm_out, lengths)
-        lin_out = self.lin(gru_out)
+        layernorm1_out = self.layernorm1(x)
+        gru1_out = self.gru1(layernorm1_out, lengths)
+        lin_out = self.lin(gru1_out)
         lin_weighted = lin_out * 16.000000
-        #output = self.pos_enc(lin_out.permute(0, 2, 1)).permute(0, 2, 1)
-        output = self.dropout(lin_out)
-        return self.projections(output).log_softmax(dim=2)
+        layernorm2_out = self.layernorm2(lin_weighted)
+        gru2_out = self.gru2(layernorm2_out, lengths)
+        return self.projections(gru2_out).log_softmax(dim=2)
 
 
 class HarakatModel(LightningModule):
@@ -183,20 +197,20 @@ class HarakatModel(LightningModule):
             max_len=max_len,
             padding_idx=input_pad_idx
         )
-        self.source_embed_diac = TwosDiacEmbedding(
-            vocab_size=targ_vocab_size,
-            dim=256,
-            max_len=max_len,
-            padding_idx=target_pad_idx
-        )
+        # self.source_embed_diac = TwosDiacEmbedding(
+        #    vocab_size=targ_vocab_size,
+        #    dim=256,
+        #    max_len=max_len,
+        #    padding_idx=target_pad_idx
+        # )
         self.encoder_layers = nn.ModuleList([
             TwosDiacEncoder(256, 256)
-            for i in range(6)
+            for i in range(5)
         ])
         self.decoder = TwosDiacDecoder(256, targ_vocab_size, max_len=max_len)
 
     def forward(self, char_inputs: torch.Tensor, diac_inputs: torch.Tensor, input_lengths: torch.Tensor):
-        embed_out = self.source_embed(char_inputs) + self.source_embed_diac(diac_inputs)
+        embed_out = self.source_embed(char_inputs, input_lengths) # + self.source_embed_diac(diac_inputs, input_lengths)
 
         enc_out = prev_attn = embed_out
         for enc in self.encoder_layers:
@@ -308,7 +322,7 @@ class HarakatModel(LightningModule):
         all_orig = []
         all_predicted = []
         results = {}
-        for batch in more_itertools.take(num_batches, data_loader):
+        for batch in tqdm(more_itertools.take(num_batches, data_loader), total=num_batches, desc="Predicting", unit="batch"):
             gt_lines = batch["original"]
             if hint_p:
                 gt_lines = cls.apply_hint_mask(gt_lines, hint_p)
