@@ -9,15 +9,11 @@ from typing import Any, Optional
 
 from hareef.text_cleaners import valid_arabic_cleaner
 from hareef.constants import (
-    DIACRITIC_CHARS,
     ALL_VALID_DIACRITICS,
     ARABIC_LETTERS,
     PUNCTUATIONS,
     WORD_SEPARATOR,
     DIACRITIC_LABELS,
-    WORD_DELIMITERS,
-    ARABIC_VOWELS,
-    ArabicDiacritics,
 )
 
 
@@ -43,12 +39,8 @@ class TokenConfig:
     target_tokens: list[str]
 
     def __post_init__(self):
-        self.input_id_map: OrderedDict[str, int] = OrderedDict(
-            (char, idx) for idx, char in enumerate(self.input_tokens)
-        )
-        self.target_id_map: OrderedDict[str, int] = OrderedDict(
-            (char, idx) for idx, char in enumerate(self.target_tokens)
-        )
+        self.input_id_map: OrderedDict[str, int] = OrderedDict((char, idx) for idx, char in enumerate(self.input_tokens))
+        self.target_id_map: OrderedDict[str, int] = OrderedDict((char, idx) for idx, char in enumerate(self.target_tokens))
 
     @classmethod
     def default(cls):
@@ -57,7 +49,7 @@ class TokenConfig:
             sos=SOS,
             eos=EOS,
             input_tokens=INPUT_TOKENS,
-            target_tokens=TARGET_TOKENS,
+            target_tokens=TARGET_TOKENS
         )
 
 
@@ -91,8 +83,6 @@ class TextEncoder:
         self.eos = self.config.eos
         self.input_eos_id = self.input_symbol_to_id[self.eos]
         self.target_eos_id = self.target_symbol_to_id[self.eos]
-
-        self.meta_tokens = {self.pad, self.sos, self.eos,}
 
         self.meta_input_token_ids = {
             self.input_pad_id,
@@ -130,41 +120,27 @@ class TextEncoder:
     def clean(self, text):
         return valid_arabic_cleaner(text)
 
-    def combine_text_and_diacritics(
-        self,
-        input_ids: list[int],
-        output_ids: list[int],
-        logits: list[int],
-        apply_golden_rule: Optional[bool] = False,
-        golden_rule_threshold: Optional[float] = 1.0,
-    ):
+    def combine_text_and_diacritics(self, input_ids: list[int], output_ids: list[int]):
         """
         Combines the  input text with its corresponding  diacritics
         Args:
             input_ids: a list of ids representing the input text
             output_ids: a list of ids representing the output text
-            logits: a list of probabilities  representing the model's certainty about output diacritic
-            apply_golden_rule: whether to replace CE diacritics with sukoon if the model is uncertain
-            golden_rule_threshold: the cut-off probability below  which we apply the golden rule
         Returns:
         text: the text after merging the inputs text representation with the output
         representation
         """
-        if apply_golden_rule:
-            self.apply_golden_rule(input_ids, output_ids, logits, golden_rule_threshold)
-
         return "".join(
             letter + diac
             for (letter, diac) in zip(
                 self.sequence_to_input(input_ids), self.sequence_to_target(output_ids)
             )
         )
-            
-
+    
     @cached_property
     def target_id_to_label(self):
         ret = {}
-        for idx, symbol in self.target_id_to_symbol.items():
+        for (idx, symbol) in self.target_id_to_symbol.items():
             ret[idx] = DIACRITIC_LABELS.get(symbol, symbol)
         return OrderedDict(sorted(ret.items()))
 
@@ -177,31 +153,3 @@ class TextEncoder:
             "target_id_map": dict(self.target_symbol_to_id),
         }
         return {"text_encoder": data}
-
-    def apply_golden_rule(self, input_ids, output_ids, logits, threshold):
-        """
-        Apply a commonly used rule in MSA that states:
-        > If you are uncertain about a **case-ending** diacritic; replace it with **Sukoon**.
-
-        If the model is uncertain about a CE diacritic (as represented by threshold), we use the
-        **Sukoon*  diacritic, taking care to apply the rule in only valid cases.
-        """
-        no_diac_id = self.target_symbol_to_id[ArabicDiacritics.NO_DIACRITIC.value]
-        sukoon_id = self.target_symbol_to_id[ArabicDiacritics.SUKOON.value]
-        # XXX: Just a personal preference. My TTs pronounces it wrongly
-        ta_marbota_id = self.input_symbol_to_id["ة"]
-        vowels_ids = frozenset(
-            # TODO: remove the `ta_marbota_id` line
-            {ta_marbota_id}
-            | {self.input_symbol_to_id[v] for v in ARABIC_VOWELS}
-        )
-        delim_ids = frozenset({self.input_symbol_to_id[d] for d in WORD_DELIMITERS})
-
-        for i in range(len(logits) - 1):
-            if (
-                input_ids[i + 1] in delim_ids
-                and (input_ids[i] not in vowels_ids)
-                and (output_ids[i] != no_diac_id)
-                and (logits[i] <= threshold)
-            ):
-                output_ids[i] = sukoon_id

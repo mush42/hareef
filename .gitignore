@@ -135,3 +135,6 @@ pyrightconfig.json
 data
 log*
 lightning_logs
+
+# Private dev stuff
+./*lab.py

@@ -76,17 +76,9 @@ def collate_fn(data):
     src_seqs, src_lengths = merge(src_seqs)
     trg_seqs, trg_lengths = merge(trg_seqs)
 
-    # Take the hint!
-    should_take_hint = np.random.binomial(1, 0.3)
-    diac_hint_p = should_take_hint * np.random.exponential(0.12)
-    diac_hint_p = clamp(diac_hint_p, 0.0, 0.9)
-    diac_mask = torch.bernoulli(torch.full(trg_seqs.shape, diac_hint_p))
-    diac = trg_seqs * diac_mask.long()
-
     batch = {
         "original": original,
         "src": src_seqs,
-        "diac": diac,
         "target": trg_seqs,
         "lengths": torch.LongTensor(src_lengths),  # src_lengths = trg_lengths
     }

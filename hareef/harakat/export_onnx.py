@@ -13,7 +13,7 @@ from .config import Config
 from .model import HarakatModel
 
 _LOGGER = logging.getLogger("hareef.harakat.export_onnx")
-OPSET_VERSION = 15
+OPSET_VERSION = 18
 
 
 def main():

@@ -16,9 +16,9 @@ from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
 from .config import Config
 from .dataset import load_test_data, load_training_data, load_validation_data
-from .model import HarakatModel
+from .model import NabihModel
 
-_LOGGER = logging.getLogger("hareef.harakat.train")
+_LOGGER = logging.getLogger("hareef.nabih.train")
 
 
 def main():
@@ -57,17 +57,13 @@ def main():
     logs_root_directory.mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f"Logs directory: {logs_root_directory}")
 
-    model = HarakatModel(config)
+    model = NabihModel(config)
 
     checkpoint_save_callbacks = []
     if config["model_save_steps"]:
-        checkpoint_save_callbacks.append(
-            ModelCheckpoint(every_n_train_steps=config["model_save_steps"])
-        )
+        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_train_steps=config["model_save_steps"]))
     if config["model_save_epochs"]:
-        checkpoint_save_callbacks.append(
-            ModelCheckpoint(every_n_epochs=config["model_save_epochs"])
-        )
+        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_epochs=config["model_save_epochs"]))
 
     loss_early_stop_callback = EarlyStopping(
         monitor="val_loss", min_delta=0.00, patience=10, mode="min", strict=True

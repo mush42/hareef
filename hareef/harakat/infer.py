@@ -35,9 +35,20 @@ def main():
         help="Device used for inference",
     )
     parser.add_argument("--text", dest="text", type=str, required=True)
-    split_choices = ['sentence', 'line', 'none']
-    parser.add_argument("--split-by", type=str, choices=split_choices, default=split_choices[0], help="Split text  (sentence recommended)")
-    parser.add_argument("--no-hints", action="store_true", help="Strip diacritics from text before inference")
+    split_choices = ["sentence", "line", "none"]
+    parser.add_argument(
+        "--split-by",
+        type=str,
+        choices=split_choices,
+        default=split_choices[-1],
+        help="Split text  (sentence recommended)",
+    )
+    parser.add_argument(
+        "--no-hints",
+        action="store_true",
+        help="Strip diacritics from text before inference",
+    )
+    parser.add_argument("--grule-p", type=float, default=None, help="Turn on golden rule, and sets the golden-rule threshold")
     parser.add_argument("--checkpoint", type=str, required=False)
     parser.add_argument("--onnx", type=str, required=False)
 
@@ -52,8 +63,19 @@ def main():
 
     config = Config(args.config)
 
+    apply_golden_rule = args.grule_p is not None
+    golden_rule_threshold = args.grule_p
+    if apply_golden_rule:
+        _LOGGER.info(f"Applying golden rule with threshold: {golden_rule_threshold}")
+
     if args.onnx:
-        diacritizer = OnnxDiacritizer(config, onnx_model=args.onnx, take_hints=not args.no_hints)
+        diacritizer = OnnxDiacritizer(
+            config,
+            apply_golden_rule=apply_golden_rule,
+            golden_rule_threshold=golden_rule_threshold,
+            take_hints=not args.no_hints,
+            onnx_model=args.onnx,
+        )
     else:
         if not args.checkpoint:
             try:
@@ -71,12 +93,18 @@ def main():
 
         model = HarakatModel.load_from_checkpoint(args.checkpoint, config=config)
         model.freeze()
-        diacritizer = TorchDiacritizer(config, model=model, take_hints=not args.no_hints)
+        diacritizer = TorchDiacritizer(
+            config,
+            apply_golden_rule=apply_golden_rule,
+            golden_rule_threshold=golden_rule_threshold,
+            take_hints=not args.no_hints,
+            model=model,
+        )
 
-    if args.split_by == 'sentence':
-        sent_segmenter = Segmenter(language='ar')
+    if args.split_by == "sentence":
+        sent_segmenter = Segmenter(language="ar")
         inputs = sent_segmenter.segment(args.text)
-    elif args.split_by == 'line':
+    elif args.split_by == "line":
         inputs = args.text.splitlines()
     else:
         inputs = [args.text]

@@ -9,36 +9,27 @@ from tempfile import TemporaryDirectory
 import more_itertools
 import numpy as np
 import torch
-from hareef.utils import (
-    find_last_checkpoint,
-    format_error_rates_as_table,
-    generate_confusion_matrix,
-)
+from hareef.utils import find_last_checkpoint, format_error_rates_as_table, generate_confusion_matrix
 
 from .config import Config
 from .diacritizer import TorchDiacritizer, OnnxDiacritizer
 from .dataset import load_test_data, load_validation_data
-from .model import HarakatModel
+from .model import NabihModel
 
 _LOGGER = logging.getLogger(__package__)
 
 
-def error_rates(diacritizer, data_loader, num_batches, hint_p):
+def error_rates(diacritizer, data_loader, num_batches):
     _LOGGER.info("Calculating DER/WER statistics...")
     try:
         with TemporaryDirectory() as predictions_dir:
-            error_rates = HarakatModel.evaluate_with_error_rates(
-                diacritizer,
-                data_loader,
-                num_batches=num_batches,
-                predictions_dir=predictions_dir,
-                hint_p=hint_p,
-            )
+            error_rates = NabihModel.evaluate_with_error_rates(diacritizer, data_loader, num_batches=num_batches, predictions_dir=predictions_dir)
     except:
         _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
         sys.exit(1)
 
     _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
+
 
 
 def confusion_matrix(diacritizer, data_loader, num_batches, plot, fig_save_path):
@@ -61,8 +52,9 @@ def confusion_matrix(diacritizer, data_loader, num_batches, plot, fig_save_path)
 def main():
     logging.basicConfig(level=logging.DEBUG)
 
+
     parser = argparse.ArgumentParser(
-        prog="hareef.harakat.metrics",
+        prog="hareef.nabih.metrics",
         description="Calculate DER/WER diacritization error rates",
     )
 
@@ -71,7 +63,7 @@ def main():
     parser.add_argument(
         "--device",
         type=str,
-        choices=["cpu", "cuda"],
+        choices=["cpu", "gpu"],
         default="cpu",
         help="Device used for inference",
     )
@@ -83,40 +75,16 @@ def main():
         help="Dataset split to use (val or test)",
     )
     parser.add_argument("--num-batches", type=int, required=False)
-    parser.add_argument(
-        "--checkpoint", type=str, required=False, help="Use torch for inference"
-    )
-    parser.add_argument(
-        "--onnx",
-        type=str,
-        required=False,
-        help="Use onnx for inference (provides significant speedups)",
-    )
+    parser.add_argument("--checkpoint", type=str, required=False, help="Use torch for inference")
+    parser.add_argument("--onnx", type=str, required=False, help="Use onnx for inference (provides significant speedups)")
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
-    err_rates_parser = subparsers.add_parser(
-        "err_rates", help="Calculate DER/WER statistics"
-    )
-    conmat_parser = subparsers.add_parser(
-        "conmat", help="Calculate and plot confusion matrix"
-    )
+    err_rates_parser = subparsers.add_parser("err_rates", help="Calculate DER/WER statistics")
+    conmat_parser = subparsers.add_parser("conmat", help="Calculate and plot confusion matrix")
 
-    err_rates_parser.add_argument(
-        "--hint-p",
-        type=float,
-        required=False,
-        default=None,
-        help="How many hints to give to the model",
-    )
 
-    conmat_parser.add_argument(
-        "--plot", action="store_true", help="Show confusion matrix plot"
-    )
-    conmat_parser.add_argument(
-        "--fig-save-path",
-        type=str,
-        help="Save confusion matrix plot to the specified path",
-    )
+    conmat_parser.add_argument("--plot", action="store_true", help="Show confusion matrix plot")
+    conmat_parser.add_argument("--fig-save-path", type=str, help="Save confusion matrix plot to the specified path")
 
     args = parser.parse_args()
 
@@ -135,7 +103,7 @@ def main():
 
     if args.onnx:
         _LOGGER.info(f"Using ONNX model from: {args.onnx}")
-        diacritizer = OnnxDiacritizer(config, take_hints=False, onnx_model=args.onnx)
+        diacritizer = OnnxDiacritizer(config, onnx_model=args.onnx)
     else:
         if not args.checkpoint:
             try:
@@ -152,11 +120,12 @@ def main():
                 sys.exit(1)
 
             _LOGGER.info(f"Using checkpoint from: {args.checkpoint}")
-            model = HarakatModel.load_from_checkpoint(
-                args.checkpoint, map_location=args.device, config=config
+            device = args.device if args.device != 'gpu' else 'cuda'
+            model = NabihModel.load_from_checkpoint(
+                args.checkpoint, map_location=device, config=config
             )
             model.freeze()
-            diacritizer = TorchDiacritizer(config, take_hints=False, model=model)
+            diacritizer = TorchDiacritizer(config, model=model)
 
     data_loader = (
         load_test_data(config, num_workers=0)
@@ -164,26 +133,12 @@ def main():
         else load_validation_data(config, num_workers=0)
     )
 
-    if args.subcommand == "err_rates":
+    if args.subcommand == 'err_rates':
         num_batches = args.num_batches or 15
-        if args.hint_p:
-            diacritizer.take_hints = True
-            _LOGGER.info("Evaluating with hints")
-            _LOGGER.info(f"Hint probability: {args.hint_p}")
-        else:
-            _LOGGER.info("Evaluating with no hints")
-        return error_rates(
-            diacritizer, data_loader, num_batches=num_batches, hint_p=args.hint_p
-        )
-    elif args.subcommand == "conmat":
+        return error_rates(diacritizer, data_loader, num_batches=num_batches)
+    elif args.subcommand == 'conmat':
         num_batches = args.num_batches or 20
-        return confusion_matrix(
-            diacritizer,
-            data_loader,
-            num_batches=num_batches,
-            plot=args.plot,
-            fig_save_path=args.fig_save_path,
-        )
+        return confusion_matrix(diacritizer, data_loader, num_batches=num_batches, plot=args.plot, fig_save_path=args.fig_save_path)
     else:
         _LOGGER.error("Please pass a metric name to view")
         sys.exit(1)

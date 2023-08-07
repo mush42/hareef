@@ -21,6 +21,14 @@ from hareef.text_cleaners import valid_arabic_cleaner
 CHECKPOINT_RE = re.compile(r"epoch=(?P<epoch>[0-9]+)-step=(?P<step>[0-9]+)")
 
 
+def sequence_mask(length, max_length: Optional[int] = None):
+    if max_length is None:
+        max_length = length.max()
+    x = torch.arange(max_length, dtype=length.dtype, device=length.device)
+    return x.unsqueeze(0) < length.unsqueeze(1)
+
+
+
 def clamp(value, min_value, max_value):
     return max(min(value, max_value), min_value)
 

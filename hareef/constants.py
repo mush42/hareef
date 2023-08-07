@@ -76,3 +76,10 @@ DIACRITIC_CHARS = {diac.value for diac in ArabicDiacritics.chars()}
 ALL_VALID_DIACRITICS = {m.value for m in ArabicDiacritics.valid()} 
 DIACRITIC_LABELS = ArabicDiacritics.diacritic_to_label()
 VALID_ARABIC_CHARS = {WORD_SEPARATOR, *ARABIC_LETTERS, *PUNCTUATIONS, *DIACRITIC_CHARS}
+ARABIC_VOWELS = {
+    chr(c)
+    for c in [0x621, 0x622, 0x623, 0x624, 0x625, 0x626, 0x627, 0x648, 0x649, 0x64a]
+}
+SENTENCE_DELIMITERS = {".", "؟", "!", "،", ":", "؛", "(", ")", "[", "]", '"', "«", "»",}
+WORD_DELIMITERS = {WORD_SEPARATOR, *SENTENCE_DELIMITERS}
+

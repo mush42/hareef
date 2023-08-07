@@ -18,6 +18,7 @@ from tqdm import tqdm
 from diacritization_evaluation.util import extract_haraqat
 from hareef.learning_rates import adjust_learning_rate
 from hareef.utils import (
+    sequence_mask,
     calculate_error_rates,
     format_error_rates_as_table,
     categorical_accuracy,
@@ -26,137 +27,161 @@ from lightning.pytorch import LightningModule
 
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules.attentions import MultiHeadAttention, sequence_mask
+from .modules.pos_encoding import PositionalEncoding
+
+from x_transformers.x_transformers import Attention
 
 
 _LOGGER = logging.getLogger(__package__)
 
 
-
-class CustomGRU(nn.Module):
-    def __init__(self, *args, vertical_dropout=0.0, use_layernorm=False, pad_idx=0.0, **kwargs):
+class HGRU(nn.Module):
+    def __init__(
+        self,
+        *args,
+        num_layers,
+        vertical_dropout=0.0,
+        use_layernorm=False,
+        pad_idx=0.0,
+        sum_bidi_output: Optional[bool]=True,
+        use_pos_encoding: Optional[bool]=False,
+        **kwargs,
+    ):
         super().__init__()
         self.dropout = output_dropout = kwargs.pop("dropout", 0.0)
         self.gru = nn.GRU(*args, dropout=vertical_dropout, **kwargs)
         self.pad_idx = float(pad_idx)
+        self.sum_bidi_output = sum_bidi_output
+        self.use_pos_encoding = use_pos_encoding
         self.batch_first = self.gru.batch_first
         self.dropout = nn.Dropout(output_dropout)
+        self.hidden_size = self.gru.hidden_size
+        self.bidirectional = self.gru.bidirectional
+        output_dim = self.hidden_size if sum_bidi_output else self.hidden_size * 2
         if use_layernorm:
-            bidirectional = self.gru.bidirectional
-            hidden_size = self.gru.hidden_size
-            normalized_shape = (hidden_size * 2) if bidirectional else hidden_size
-            self.layernorm = nn.LayerNorm(
-                normalized_shape=normalized_shape,
-                eps=1e-6
-            )
+            self.layernorm = nn.LayerNorm(normalized_shape=output_dim)
         else:
             self.layernorm = nn.Identity()
+        self.pos_encoder = RotaryPositionalEncoding(output_dim)
 
-    def forward(self, input: torch.Tensor, lengths: torch.Tensor, hx: Optional[torch.Tensor]=None) -> torch.Tensor:
-        packed_input = pack_padded_sequence(input, lengths, batch_first=self.batch_first)
+    def forward(
+        self,
+        input: torch.Tensor,
+        lengths: torch.Tensor,
+        hx: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        packed_input = pack_padded_sequence(
+            input, lengths, batch_first=self.batch_first
+        )
         output, hx = self.gru(packed_input, hx)
-        output, _lengths = pad_packed_sequence(output, batch_first=self.batch_first, padding_value=self.pad_idx)
+        output, _lengths = pad_packed_sequence(
+            output, batch_first=self.batch_first, padding_value=self.pad_idx
+        )
+        if self.sum_bidi_output and self.bidirectional:
+            output = output[:, :, : self.hidden_size] + output[:, :, self.hidden_size :]
         output = self.layernorm(output)
+        if self.use_pos_encoding:
+            mask = torch.unsqueeze(
+                sequence_mask(lengths, output.size(1)).bool(),
+                1
+            )
+            pos_enc_input = output
+            rope_out, _ = self.pos_encoder(lengths.max(), output.device)
+            rope_out = rope_out
+            output = apply_rotary_pos_emb(output, rope_out) + output
         return self.dropout(output.tanh())
 
 
-class TwosDiacEmbedding(nn.Module):
-
+class HEmbedding(nn.Module):
     def __init__(self, vocab_size, dim, max_len, padding_idx=0):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, dim, padding_idx=padding_idx)
         self.lin = nn.Linear(dim, dim, bias=False)
-        self.gru = CustomGRU(
-            input_size=dim,
-            hidden_size=dim // 2,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-            dropout=0.2
+        self.pos_enc = PositionalEncoding(
+            channels=dim,
+            max_len=max_len,
         )
 
     def forward(self, src, lengths):
-        embed_out = self.embedding(src)
+        embed_out = self.embedding(src).to(src.device)
         lin_out = self.lin(embed_out)
         lin_weighted = lin_out * 16.000000
-        return self.gru(lin_weighted, lengths)
+        pose_enc_input = lin_weighted.permute(0, 2, 1)
+        pos_enc_mask = torch.unsqueeze(
+            sequence_mask(lengths, lin_weighted.shape[1]), 1
+        ).bool().to(src.device)
+        return self.pos_enc(pose_enc_input, mask=pos_enc_mask).permute(0, 2, 1) + lin_weighted
 
 
-class TwosDiacEncoder(nn.Module):
-
+class HEncoder(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
-        self.attn_layernorm = nn.LayerNorm(normalized_shape=input_dim)
-        self.attn =             MultiHeadAttention(
-            channels=input_dim,
-            out_channels=input_dim,
-            n_heads=4,
-            p_dropout=0.1,
-            proximal_bias=True,
-            proximal_init=True
+        self.attn_layernorm = nn.LayerNorm(input_dim)
+        self.attention = Attention(
+            dim=input_dim,
+            heads=6,
+            dropout=0.1,
+            flash=True,
+            onnxable=True,
         )
         self.attn_lin = nn.Linear(input_dim, input_dim, bias=False)
         self.attn_dropout = nn.Dropout(0.1)
         self.ff = nn.Sequential(
-            nn.LayerNorm(normalized_shape=input_dim),
-            nn.Linear(input_dim, 1024),
+            nn.LayerNorm(input_dim),
+            nn.Linear(input_dim, input_dim * 4),
             nn.ReLU(),
-            nn.Linear(1024, output_dim),
-            nn.Dropout(0.2)
+            nn.Linear(input_dim * 4, output_dim),
+            nn.Dropout(0.1),
         )
 
-    def forward(self, x, z, lengths):
-        layernorm_out = self.attn_layernorm(x)
+    def forward(self, x, residual, lengths):
+        layernorm_out = self.attn_layernorm(x).to(x.device)
 
-        input_mask = torch.unsqueeze(
-            sequence_mask(lengths, layernorm_out.size(1)), 1
-        ).type_as(layernorm_out)
+        attn_mask = sequence_mask(lengths, layernorm_out.shape[-1]).to(x.device)
+        attn_out , __ = self.attention(layernorm_out)
 
-        attn_input = layernorm_out.permute(0, 2, 1) * input_mask
-        attn_mask = input_mask.unsqueeze(2) * input_mask.unsqueeze(-1)
-        attn_out = self.attn(attn_input, attn_input, attn_mask=attn_mask)
-        attn_out = attn_out.permute(0, 2, 1)
-
-        attn_out = attn_out + z
+        attn_out = attn_out + residual
 
         output = self.ff(attn_out) + attn_out
 
         return output, attn_out
 
 
-class TwosDiacDecoder(nn.Module):
-
+class HOutput(nn.Module):
     def __init__(self, input_dim, output_dim, max_len):
         super().__init__()
-        self.layernorm1 = nn.LayerNorm(normalized_shape=input_dim)
-        self.gru1 = CustomGRU(
-            input_size=input_dim,
-            hidden_size=input_dim,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-            dropout=0.2
+        self.layernorm1 = nn.LayerNorm(input_dim)
+        self.pos_enc1 = PositionalEncoding(
+            channels=input_dim,
+            max_len=max_len
         )
-        self.lin = nn.Linear(input_dim * 2, input_dim, bias=False)
-        self.layernorm2 = nn.LayerNorm(normalized_shape=input_dim)
-        self.gru2 = CustomGRU(
-            input_size=input_dim,
-            hidden_size=input_dim // 2,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-            dropout=0.1
+        self.lin = nn.Linear(input_dim, input_dim, bias=False)
+        self.layernorm2 = nn.LayerNorm(input_dim)
+        self.pos_enc2 = PositionalEncoding(
+            channels=input_dim,
+            max_len=max_len
         )
         self.projections = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, lengths):
-        layernorm1_out = self.layernorm1(x)
-        gru1_out = self.gru1(layernorm1_out, lengths)
-        lin_out = self.lin(gru1_out)
+        pos_enc_mask = torch.unsqueeze(
+            sequence_mask(lengths, x.shape[1]), 1
+        ).bool().to(x.device)
+
+        layernorm1_out = self.layernorm1(x).to(x.device)
+        pose_enc1_input = layernorm1_out.permute(0, 2, 1)
+        pos_enc1_out = self.pos_enc1(pose_enc1_input, mask=pos_enc_mask)
+        pos_enc1_out = pos_enc1_out.permute(0, 2, 1) + layernorm1_out
+
+        lin_out = self.lin(pos_enc1_out)
         lin_weighted = lin_out * 16.000000
-        layernorm2_out = self.layernorm2(lin_weighted)
-        gru2_out = self.gru2(layernorm2_out, lengths)
-        return self.projections(gru2_out).log_softmax(dim=2)
+        layernorm2_out = self.layernorm2(lin_weighted).to(x.device)
+
+        pos_enc2_input = layernorm2_out.permute(0, 2, 1)
+        pos_enc2_out = self.pos_enc2(pos_enc2_input, mask=pos_enc_mask)
+        pos_enc2_out = pos_enc2_out.permute(0, 2, 1) + layernorm2_out
+
+        return self.projections(pos_enc2_out).log_softmax(dim=2)
 
 
 class HarakatModel(LightningModule):
@@ -173,10 +198,11 @@ class HarakatModel(LightningModule):
         self.test_step_outputs = {}
 
         self.diacritics_loss = nn.CrossEntropyLoss(ignore_index=self.target_pad_idx)
+
         self._build_layers(
             inp_vocab_size=config.len_input_symbols * 3,
             targ_vocab_size=config.len_target_symbols,
-            embedding_dim=config["embedding_dim"],
+            model_dim=config["model_dim"],
             max_len=config["max_len"],
             input_pad_idx=self.config.text_encoder.input_pad_id,
             target_pad_idx=self.config.text_encoder.target_pad_id,
@@ -186,37 +212,50 @@ class HarakatModel(LightningModule):
         self,
         inp_vocab_size,
         targ_vocab_size,
-        embedding_dim,
+        model_dim,
         max_len,
         input_pad_idx,
         target_pad_idx,
     ):
-        self.source_embed = TwosDiacEmbedding(
+        self.source_embed = HEmbedding(
             vocab_size=inp_vocab_size,
-            dim=256,
+            dim=model_dim,
             max_len=max_len,
-            padding_idx=input_pad_idx
+            padding_idx=input_pad_idx,
         )
         # self.source_embed_diac = TwosDiacEmbedding(
         #    vocab_size=targ_vocab_size,
-        #    dim=256,
+        #    dim=model_dim,
         #    max_len=max_len,
         #    padding_idx=target_pad_idx
         # )
-        self.encoder_layers = nn.ModuleList([
-            TwosDiacEncoder(256, 256)
-            for i in range(5)
-        ])
-        self.decoder = TwosDiacDecoder(256, targ_vocab_size, max_len=max_len)
+        enc_num_layers = 4
+        self.encoder_layers = nn.ModuleList(
+            [
+                HEncoder(
+                    model_dim,
+                    model_dim,
+                )
+                for i in range(enc_num_layers)
+            ]
+        )
+        self.output = HOutput(model_dim, targ_vocab_size, max_len=max_len)
 
-    def forward(self, char_inputs: torch.Tensor, diac_inputs: torch.Tensor, input_lengths: torch.Tensor):
-        embed_out = self.source_embed(char_inputs, input_lengths) # + self.source_embed_diac(diac_inputs, input_lengths)
+    def forward(
+        self,
+        char_inputs: torch.Tensor,
+        diac_inputs: torch.Tensor,
+        input_lengths: torch.Tensor,
+    ):
+        embed_out = self.source_embed(
+            char_inputs.to(self.device), input_lengths
+        )  # + self.source_embed_diac(diac_inputs, input_lengths)
 
-        enc_out = prev_attn = embed_out
+        enc_out = residual_attn = embed_out
         for enc in self.encoder_layers:
-            enc_out, prev_attn = enc(enc_out, prev_attn, input_lengths)
+            enc_out, residual_attn = enc(enc_out, residual_attn, input_lengths)
 
-        predictions = self.decoder(enc_out, input_lengths)
+        predictions = self.output(enc_out, input_lengths)
 
         return {"diacritics": predictions}
 
@@ -252,7 +291,7 @@ class HarakatModel(LightningModule):
             optimizer,
             factor=self.config["lr_factor"],
             patience=self.config["lr_patience"],
-            min_lr=self.config["min_lr"]
+            min_lr=self.config["min_lr"],
         )
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "loss"}
 
@@ -269,17 +308,22 @@ class HarakatModel(LightningModule):
             error_rates = self.evaluate_with_error_rates(
                 diacritizer,
                 data_loader=data_loader,
-                num_batches = self.config["error_rates_n_batches"],
-                predictions_dir=Path(self.trainer.log_dir).joinpath("predictions")
+                num_batches=self.config["error_rates_n_batches"],
+                predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
             )
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
             if self.logger is not None:
                 num_batches = max(
-                    self.config["n_predicted_text_tensorboard"] // self.config["batch_size"],
-                    1
+                    self.config["n_predicted_text_tensorboard"]
+                    // self.config["batch_size"],
+                    1,
                 )
-                for i, (gt, pred) in enumerate(self.example_predictions(data_loader, diacritizer, num_batches)):
-                    self.logger.experiment.add_text(f"example-text/{i}", f"{gt} |->  {pred}")
+                for i, (gt, pred) in enumerate(
+                    self.example_predictions(data_loader, diacritizer, num_batches)
+                ):
+                    self.logger.experiment.add_text(
+                        f"example-text/{i}", f"{gt} |->  {pred}"
+                    )
 
     def on_test_epoch_end(self) -> None:
         self._log_epoch_metrics(self.test_step_outputs)
@@ -288,8 +332,8 @@ class HarakatModel(LightningModule):
         error_rates = self.evaluate_with_error_rates(
             diacritizer,
             data_loader=data_loader,
-            num_batches = self.config["error_rates_n_batches"],
-            predictions_dir=Path(self.trainer.log_dir).joinpath("predictions")
+            num_batches=self.config["error_rates_n_batches"],
+            predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
         )
         _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
@@ -302,27 +346,44 @@ class HarakatModel(LightningModule):
     def _process_batch(self, batch):
         batch["src"] = batch["src"].to(self.device)
         batch["target"] = batch["target"].to(self.device)
-        batch["lengths"] = batch["lengths"].to('cpu')
+        batch["lengths"] = batch["lengths"].to("cpu")
         outputs = self(batch["src"], batch["diac"], batch["lengths"])
         predictions = outputs["diacritics"].contiguous()
         targets = batch["target"].contiguous()
+
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = targets.view(-1)
-        diac_loss = self.diacritics_loss(predictions.to(self.device), targets.to(self.device))
-        diac_accuracy = categorical_accuracy(predictions.to(self.device), targets.to(self.device), self.target_pad_idx, device=self.device)
+
+        diac_loss = self.diacritics_loss(
+            predictions.to(self.device), targets.to(self.device)
+        )
+        diac_accuracy = categorical_accuracy(
+            predictions.to(self.device),
+            targets.to(self.device),
+            self.target_pad_idx,
+            device=self.device,
+        )
+
         return {
             "loss": diac_loss,
             "accuracy": diac_accuracy,
         }
 
     @classmethod
-    def evaluate_with_error_rates(cls, diacritizer, data_loader, num_batches, predictions_dir, hint_p=None):
+    def evaluate_with_error_rates(
+        cls, diacritizer, data_loader, num_batches, predictions_dir, hint_p=None
+    ):
         predictions_dir = Path(predictions_dir)
         predictions_dir.mkdir(parents=True, exist_ok=True)
         all_orig = []
         all_predicted = []
         results = {}
-        for batch in tqdm(more_itertools.take(num_batches, data_loader), total=num_batches, desc="Predicting", unit="batch"):
+        for batch in tqdm(
+            more_itertools.take(num_batches, data_loader),
+            total=num_batches,
+            desc="Predicting",
+            unit="batch",
+        ):
             gt_lines = batch["original"]
             if hint_p:
                 gt_lines = cls.apply_hint_mask(gt_lines, hint_p)
@@ -366,10 +427,8 @@ class HarakatModel(LightningModule):
         for line in lines:
             __, chars, diac = extract_haraqat(line)
             diac_len = len(diac)
-            for i in random.sample(range(diac_len),  k=round(diac_len * mask_p)):
+            for i in random.sample(range(diac_len), k=round(diac_len * mask_p)):
                 diac[i] = ""
-            results.append(
-                "".join(more_itertools.interleave(chars, diac))
-            )
+            results.append("".join(more_itertools.interleave(chars, diac)))
 
         return results
