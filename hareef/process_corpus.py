@@ -5,7 +5,7 @@ import logging
 import os
 import random
 from concurrent.futures import ProcessPoolExecutor
-from functools import partial
+from functools import reduce, partial
 from pathlib import Path
 
 from diacritization_evaluation.util import extract_haraqat
@@ -45,12 +45,25 @@ def segment_sentences(max_chars, line):
     return [line.strip() for line in _do_segment_sentences(line, max_chars)]
 
 
+def add_and_filter_punc(punc, sents, item):
+    if item == punc and sents[-1]:
+        sents[-1] += punc
+    else:
+        sents.append(item)
+    return sents
+
+
 def _do_segment_sentences(line, max_chars):
     lines = [
         line,
     ]
     for punc in SENTENCE_BOUNDRY_PUNCS:
-        sents = [sent for sent in line.split(punc) for line in lines]
+        sents = reduce(
+            partial(add_and_filter_punc, punc),
+            (sent for sent in line.partition(punc) for line in lines),
+            [""]
+        )
+        sents = filter(None, sents)
         lines.clear()
         for sent in sents:
             if 0 < len(sent) <= max_chars:
@@ -106,6 +119,11 @@ def process_corpus_arg_parser():
         help="apply transformations to a subset of the corpus. Useful for development",
     )
     parser.add_argument(
+        "--normalize",
+        action="store_true",
+        help="Normalize corpus (strongly recommended)",
+    )
+    parser.add_argument(
         "--validate",
         action="store_true",
         help="Validate lines an remove lines with invalid diacritics",
@@ -145,8 +163,9 @@ def main(args):
     corp_paths = set(Path(c).resolve() for c in args.corpus)
     _LOGGER.info("\n".join(os.fspath(p) for p in corp_paths))
     text = "\n".join(corp.read_text(encoding="utf-8").strip() for corp in corp_paths)
-    _LOGGER.info("Normalizing corpus...")
-    text = normalize_text(text)
+    if args.normalize:
+        _LOGGER.info("Normalizing corpus...")
+        text = normalize_text(text)
 
     lines = text.splitlines()
 

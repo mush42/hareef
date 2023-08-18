@@ -64,7 +64,7 @@ class Diacritizer:
         input_lengths = np.array(lengths, dtype=np.int64)
 
         start_time = time.perf_counter()
-        predictions = self.diacritize_batch(char_inputs, input_lengths)
+        predictions, logits = self.diacritize_batch(char_inputs, input_lengths)
         infer_time_ms = (time.perf_counter() - start_time) * 1000
 
         sentences = []
@@ -99,10 +99,11 @@ class TorchDiacritizer(Diacritizer):
             raise RuntimeError("Called `diacritize_batch` without setting the `model`")
         char_inputs = torch.LongTensor(char_inputs).to(self.device)
         input_lengths = torch.LongTensor(input_lengths).to('cpu')
-        outputs = self.model.predict(char_inputs, input_lengths)
-        diacritics = outputs["diacritics"]
-        predictions = torch.argmax(diacritics, 2)
-        return predictions.detach().cpu().numpy()
+        indices, logits = self.model.predict(char_inputs, input_lengths)
+        return (
+            indices.detach().cpu().numpy(),
+            logits.detach().cpu().numpy(),
+        )
 
 
 class OnnxDiacritizer(Diacritizer):
@@ -115,6 +116,5 @@ class OnnxDiacritizer(Diacritizer):
             "char_inputs": char_inputs,
             "input_lengths": input_lengths,
         }
-        output = self.session.run(None, inputs)[0]
-        predictions = output.argmax(axis=2)
-        return predictions
+        indices, logits = self.session.run(None, inputs)
+        return indices, logits

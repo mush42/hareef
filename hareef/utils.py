@@ -1,5 +1,6 @@
 # coding: utf-8
 
+import io
 import os
 import re
 from itertools import repeat
@@ -342,3 +343,10 @@ def generate_confusion_matrix(test_lines, pred_lines, plot=False, fig_save_path=
         plt.show()
 
     return confusion_matrix
+
+
+def get_model_size_mb(model):
+    buf = io.BytesIO()
+    torch.save(model.state_dict(), buf)
+    num_bytes = len(buf.getbuffer())
+    return num_bytes //1e6

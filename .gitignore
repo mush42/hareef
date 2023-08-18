@@ -129,6 +129,8 @@ dmypy.json
 .pyre/
 pyrightconfig.json
 
+# neural compressor
+nc_workspace/
 
 # Training and dataset
 .corpus

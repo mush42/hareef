@@ -6,6 +6,7 @@ tensorboard==2.13.0
 numpy==1.24.3
 pandas==2.0.2
 matplotlib==3.7.1
+neural-compressor==2.2.1
 onnx==1.14.0
 onnxruntime==1.15.0
 onnxsim==0.4.33

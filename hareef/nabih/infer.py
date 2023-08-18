@@ -32,7 +32,6 @@ def main():
         "--device",
         type=str,
         default="cpu",
-        choices=["cpu", "gpu"],
         help="Device used for inference",
     )
     parser.add_argument("--batch-size", type=int, default=16)

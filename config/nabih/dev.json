@@ -5,12 +5,12 @@
   "is_data_preprocessed": false,
   "data_separator": "|",
   "diacritics_separator": "*",
-  "max_len": 320,
-  "embedding_dim": 256,
-  "learning_rate": 3e-4,
+  "max_len": 300,
+  "embedding_dim": 144,
+  "learning_rate": 1e-4,
   "batch_size": 32,
   "warmup_steps": null,
-  "adam_betas": [0.9, 0.999],
+  "adam_betas": [0.9, 0.9999],
   "use_decay": true,
   "weight_decay": 0.0,
   "lr_factor": 0.2,
@@ -23,6 +23,5 @@
   "evaluate_with_error_rates_epochs": 50,
   "model_save_steps": 500,
   "model_save_epochs": 1,
-  "error_rates_n_batches": 15,
-  "n_predicted_text_tensorboard": 10
+  "error_rates_n_batches": 15
 }

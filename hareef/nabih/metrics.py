@@ -10,6 +10,7 @@ import more_itertools
 import numpy as np
 import torch
 from hareef.utils import find_last_checkpoint, format_error_rates_as_table, generate_confusion_matrix
+from tqdm import tqdm
 
 from .config import Config
 from .diacritizer import TorchDiacritizer, OnnxDiacritizer
@@ -40,7 +41,8 @@ def confusion_matrix(diacritizer, data_loader, num_batches, plot, fig_save_path)
 
     gt_lines = []
     pred_lines = []
-    for batch in more_itertools.take(num_batches, data_loader):
+    total = min(num_batches, len(data_loader))
+    for batch in tqdm(more_itertools.take(num_batches, data_loader), total=total, desc="Predicting", unit="batch"):
         batch_lines = batch["original"]
         gt_lines.extend(batch_lines)
         predicted, __ = diacritizer.diacritize_text(batch_lines)
@@ -79,7 +81,7 @@ def main():
     parser.add_argument("--onnx", type=str, required=False, help="Use onnx for inference (provides significant speedups)")
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
-    err_rates_parser = subparsers.add_parser("err_rates", help="Calculate DER/WER statistics")
+    err_rates_parser = subparsers.add_parser("rates", help="Calculate DER/WER statistics")
     conmat_parser = subparsers.add_parser("conmat", help="Calculate and plot confusion matrix")
 
 
@@ -133,7 +135,7 @@ def main():
         else load_validation_data(config, num_workers=0)
     )
 
-    if args.subcommand == 'err_rates':
+    if args.subcommand == 'rates':
         num_batches = args.num_batches or 15
         return error_rates(diacritizer, data_loader, num_batches=num_batches)
     elif args.subcommand == 'conmat':

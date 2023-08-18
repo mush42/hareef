@@ -13,14 +13,9 @@ import more_itertools
 import numpy as np
 import torch
 from torch import nn, optim
-from torch.nn import functional as F
-from torch.nn import TransformerEncoderLayer, LayerNorm, TransformerEncoder
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
 from x_transformers import TransformerWrapper, Encoder
 from diacritization_evaluation.util import extract_haraqat
-from hareef.learning_rates import adjust_learning_rate
 from hareef.utils import (
     sequence_mask,
     calculate_error_rates,
@@ -72,7 +67,7 @@ class NabihModel(LightningModule):
             max_seq_len = max_len,
             attn_layers=Encoder(
                 dim = embedding_dim,
-                depth=6,
+                depth=8,
                 heads=8,
                 layer_dropout=0.2,
                 attn_dropout=0.1,
@@ -85,17 +80,20 @@ class NabihModel(LightningModule):
         )
         self.fc_out = nn.Linear(inp_vocab_size, targ_vocab_size)
 
-    def forward(self, batch):
-        x = batch["src"].to(self.device)
-        lengths = batch["lengths"].to(self.device)
+    def forward(self, inputs, lengths):
+        x = inputs.to(self.device)
+        lengths = lengths.to(self.device)
 
-        mask = sequence_mask(batch["lengths"], max_length=x.shape[-1]).to(self.device)
+        mask = sequence_mask(lengths, max_length=x.shape[-1]).to(self.device)
         x = self.transformer(x, mask=mask)
-        x = self.fc_out(x).log_softmax(dim=2)
-        return {"diacritics": x}
+        x = self.fc_out(x)
+        return x
 
     def predict(self, inputs, lengths):
-        return self({"src": inputs, "lengths": lengths})
+        output = self(inputs, lengths)
+        logits = output.softmax(dim=2)
+        predictions = torch.argmax(logits, dim=2)
+        return predictions.byte(), logits
 
     def training_step(self, batch, batch_idx):
         metrics = self._process_batch(batch)
@@ -133,7 +131,7 @@ class NabihModel(LightningModule):
             mode='min',
             cooldown=1,
         )
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "loss"}
+        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
 
     def on_train_epoch_end(self):
         self._log_epoch_metrics(self.training_step_outputs)
@@ -152,18 +150,6 @@ class NabihModel(LightningModule):
                 predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
             )
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
-            if self.logger is not None:
-                num_batches = max(
-                    self.config["n_predicted_text_tensorboard"]
-                    // self.config["batch_size"],
-                    1,
-                )
-                for i, (gt, pred) in enumerate(
-                    self.example_predictions(data_loader, diacritizer, num_batches)
-                ):
-                    self.logger.experiment.add_text(
-                        f"example-text/{i}", f"{gt} |->  {pred}"
-                    )
 
     def on_test_epoch_end(self) -> None:
         self._log_epoch_metrics(self.test_step_outputs)
@@ -184,10 +170,8 @@ class NabihModel(LightningModule):
             values.clear()
 
     def _process_batch(self, batch):
-        outputs = self(batch)
-
-        predictions = outputs["diacritics"].contiguous()
-        batch["target"] = batch["target"].contiguous()
+        predictions = self(batch["src"], batch["lengths"])
+        target = batch["target"].contiguous()
 
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = batch["target"].view(-1)
@@ -216,9 +200,10 @@ class NabihModel(LightningModule):
         all_orig = []
         all_predicted = []
         results = {}
+        num_batches_to_take = min(num_batches, len(data_loader))
         for batch in tqdm(
-            more_itertools.take(num_batches, data_loader),
-            total=num_batches,
+            more_itertools.take(num_batches_to_take, data_loader),
+            total=num_batches_to_take,
             desc="Predicting",
             unit="batch",
         ):
@@ -241,16 +226,6 @@ class NabihModel(LightningModule):
             results = calculate_error_rates(orig_path, predicted_path)
         except:
             _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
-            results = {"DER": 0.0, "WER": 0.0, "DER*": 0.0, "WER*": 0.0}
+            results = {"DER": 100.0, "WER": 100.0, "DER*": 100.0, "WER*": 100.0}
 
         return results
-
-    def example_predictions(self, data_loader, diacritizer, num_batches):
-        gt_lines = []
-        pred_lines = []
-        for batch in more_itertools.take(num_batches, data_loader):
-            gt_lines.extend(batch["original"])
-            predictions, _ = diacritizer.diacritize_text(batch["original"])
-            pred_lines.extend(predictions)
-
-        yield from zip(gt_lines, pred_lines)
