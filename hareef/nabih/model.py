@@ -14,7 +14,6 @@ import numpy as np
 import torch
 from torch import nn, optim
 from tqdm import tqdm
-from x_transformers import TransformerWrapper, Encoder
 from diacritization_evaluation.util import extract_haraqat
 from hareef.utils import (
     sequence_mask,
@@ -26,6 +25,7 @@ from lightning.pytorch import LightningModule
 
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
+from .modules.x_transformers import TransformerWrapper, Encoder
 
 
 _LOGGER = logging.getLogger(__package__)
@@ -48,6 +48,8 @@ class NabihModel(LightningModule):
             inp_vocab_size=self.config.len_input_symbols * 3,
             targ_vocab_size=self.config.len_target_symbols,
             embedding_dim=self.config["embedding_dim"],
+            num_layers=self.config["num_layers"],
+            num_heads=self.config["num_heads"],
             max_len=self.config["max_len"],
             input_pad_idx=self.config.text_encoder.input_pad_id,
             target_pad_idx=self.config.text_encoder.target_pad_id,
@@ -58,6 +60,8 @@ class NabihModel(LightningModule):
         inp_vocab_size,
         targ_vocab_size,
         embedding_dim,
+        num_layers,
+        num_heads,
         max_len,
         input_pad_idx,
         target_pad_idx,
@@ -67,8 +71,8 @@ class NabihModel(LightningModule):
             max_seq_len = max_len,
             attn_layers=Encoder(
                 dim = embedding_dim,
-                depth=8,
-                heads=8,
+                depth=num_layers,
+                heads=num_heads,
                 layer_dropout=0.2,
                 attn_dropout=0.1,
                 ff_dropout=0.1,

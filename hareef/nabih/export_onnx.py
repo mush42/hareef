@@ -17,7 +17,7 @@ from .model import NabihModel
 
 _LOGGER = logging.getLogger("hareef.nabih.export_onnx")
 
-DEFAULT_OPSET_VERSION = 18
+DEFAULT_OPSET_VERSION = 17
 
 
 class QuantDataLoader:
@@ -97,7 +97,11 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
             output = model._infer(inputs, lengths)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
-            return predictions.byte(), logits
+            max_logits = torch.max(logits, dim=2).values
+            return (
+                predictions.squeeze(0).byte(),
+                max_logits.squeeze(0)
+            )
 
         dummy_input_length = config["max_len"]
         char_inputs = torch.randint(
@@ -111,7 +115,8 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
             output = model._infer(inputs, lengths)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
-            return predictions.byte(), logits
+            max_logits = torch.max(logits, dim=2).values
+            return predictions.byte(), max_logits
 
         dummy_input_length = 50
         char_inputs = torch.randint(
