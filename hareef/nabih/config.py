@@ -39,3 +39,10 @@ class Config:
         with open(self.config_path, "rb") as model_json:
             _config = json.load(model_json)
         return _config
+
+    def get_inference_config(self):
+        token_config = self.text_encoder.dump_tokens()
+        return {
+            "max_length": self["max_len"] - 2,
+            **token_config
+        }

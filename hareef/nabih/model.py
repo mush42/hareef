@@ -51,8 +51,6 @@ class NabihModel(LightningModule):
             num_layers=self.config["num_layers"],
             num_heads=self.config["num_heads"],
             max_len=self.config["max_len"],
-            input_pad_idx=self.config.text_encoder.input_pad_id,
-            target_pad_idx=self.config.text_encoder.target_pad_id,
         )
 
     def _build_layers(
@@ -63,23 +61,24 @@ class NabihModel(LightningModule):
         num_layers,
         num_heads,
         max_len,
-        input_pad_idx,
-        target_pad_idx,
     ):
         self.transformer = TransformerWrapper(
             num_tokens = inp_vocab_size,
             max_seq_len = max_len,
+            post_emb_norm=True,
             attn_layers=Encoder(
                 dim = embedding_dim,
                 depth=num_layers,
                 heads=num_heads,
-                layer_dropout=0.2,
+                layer_dropout=0.15,
                 attn_dropout=0.1,
                 ff_dropout=0.1,
                 attn_flash=True,
+                cascading_heads=True,
                 rotary_pos_em=True,
+                use_simple_rmsnorm = True,
+                attn_gate_values = True,
                 onnxable=True,
-                cascading_heads=True
             )
         )
         self.fc_out = nn.Linear(inp_vocab_size, targ_vocab_size)
@@ -153,6 +152,10 @@ class NabihModel(LightningModule):
                 num_batches=self.config["error_rates_n_batches"],
                 predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
             )
+            self.log_dict({
+                k.replace("*", "_star"): v
+                for (k, v) in error_rates.items()
+            })
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
     def on_test_epoch_end(self) -> None:

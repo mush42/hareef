@@ -121,7 +121,7 @@ def main():
         inference_config_path = logs_root_directory.joinpath("inference-config.json")
         with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
             json.dump(
-                config.text_encoder.dump_tokens(), file, ensure_ascii=False, indent=2
+                config.get_inference_config(), file, ensure_ascii=False, indent=2
             )
         _LOGGER.info(f"Writing inference config to file: `{inference_config_path}`")
         _LOGGER.info("Training loop starting...")

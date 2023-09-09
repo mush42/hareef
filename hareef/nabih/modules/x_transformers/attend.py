@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Optional
 
 import torch
 from torch import nn, einsum, Tensor
@@ -17,9 +18,9 @@ EfficientAttentionConfig = namedtuple('EfficientAttentionConfig', ['enable_flash
 
 @dataclass
 class Intermediates:
-    qk_similarities: Tensor = None
-    pre_softmax_attn: Tensor = None
-    post_softmax_attn: Tensor = None
+    qk_similarities: Optional[Tensor] = None
+    pre_softmax_attn: Optional[Tensor] = None
+    post_softmax_attn: Optional[Tensor] = None
 
     def to_tuple(self):
         return (self.qk_similarities, self.pre_softmax_attn, self.post_softmax_attn)
@@ -74,6 +75,7 @@ class Attend(nn.Module):
         scale = None,
         qk_norm = False,
         flash = False,
+        add_zero_kv = False,
         onnxable = False
     ):
         super().__init__()
@@ -101,6 +103,11 @@ class Attend(nn.Module):
 
         assert not (flash and sparse_topk), 'sparse topk not compatible with flash attention'
         self.sparse_topk = sparse_topk
+
+        # add a key / value token composed of zeros
+        # in case this helps controlling outliers, proposed by https://www.evanmiller.org/attention-is-off-by-one.html
+
+        self.add_zero_kv = add_zero_kv
 
         # flash attention
 
@@ -221,6 +228,15 @@ class Attend(nn.Module):
 
         scale = default(self.scale, q.shape[-1] ** -0.5)
 
+        if self.add_zero_kv:
+            k, v = map(lambda t: F.pad(t, (0, 0, 1, 0), value = 0.), (k, v))
+
+            if exists(mask):
+                mask = F.pad(mask, (1, 0), value = True)
+
+            if exists(attn_bias):
+                attn_bias = F.pad(attn_bias, (1, 0), value = 0.)
+
         if self.flash:
             assert not exists(prev_attn), 'residual attention not compatible with flash attention'
             return self.flash_attn(q, k, v, mask = mask, attn_bias = attn_bias)
@@ -241,7 +257,6 @@ class Attend(nn.Module):
             dots = dots + attn_bias
 
         i, j, dtype = *dots.shape[-2:], dots.dtype
-        pre_softmax_attn = dots.clone()
 
         mask_value = -torch.finfo(dots.dtype).max
 
@@ -256,6 +271,8 @@ class Attend(nn.Module):
         if self.causal:
             causal_mask = self.create_causal_mask(i, j, device = device)
             dots = dots.masked_fill(causal_mask, mask_value)
+
+        pre_softmax_attn = dots.clone()
 
         attn = self.attn_fn(dots, dim = -1)
         attn = attn.type(dtype)

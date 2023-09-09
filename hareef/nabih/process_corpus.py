@@ -19,7 +19,8 @@ def main():
 
     config = Config(args.config)
     args.output_dir = config.data_dir
-    args.max_chars = config.config["max_len"]
+    # reserve 2 empty poses for the SOS and EOS tokens
+    args.max_chars = config.config["max_len"] - 2
 
     proc_main(args)
 

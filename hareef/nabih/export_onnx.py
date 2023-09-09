@@ -115,8 +115,7 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
             output = model._infer(inputs, lengths)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
-            max_logits = torch.max(logits, dim=2).values
-            return predictions.byte(), max_logits
+            return predictions.byte(), logits
 
         dummy_input_length = 50
         char_inputs = torch.randint(
