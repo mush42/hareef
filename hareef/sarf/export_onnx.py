@@ -13,11 +13,11 @@ from hareef.utils import categorical_accuracy, find_last_checkpoint, format_as_t
 
 from .config import Config
 from .dataset import load_training_data, load_validation_data
-from .model import NabihModel
+from .model import SarfModel
 
-_LOGGER = logging.getLogger("hareef.nabih.export_onnx")
+_LOGGER = logging.getLogger("hareef.sarf.export_onnx")
 
-DEFAULT_OPSET_VERSION = 17
+DEFAULT_OPSET_VERSION = 16
 
 
 class QuantDataLoader:
@@ -124,7 +124,7 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
         input_lengths = torch.LongTensor([dummy_input_length])
         dummy_input = (char_inputs, input_lengths)
         dynamic_axes={
-            "char_inputs": {0: "batch_size", 1: "ar_characters"},
+            "char_inputs": {0: "batch_size", 1: "time"},
             "input_lengths": {0: "batch_size"},
             "output": {0: "batch_size", 1: "time"},
         }
@@ -185,7 +185,11 @@ def quantize(input_model_path, config, fix_dims):
         max_len=config["max_len"]
     )
 
-    q_conf = PostTrainingQuantConfig(domain='nlp')
+    q_conf = PostTrainingQuantConfig(
+        domain='nlp',
+        inputs=["char_inputs", "input_lengths"],
+        outputs=["output"]
+    )
     q_accuracy = QuantCategoricalAccuracy(config)
     q_model = quantization.fit(
         model=input_model_path,
@@ -203,7 +207,7 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = argparse.ArgumentParser(
-        prog="hareef.nabih.export_onnx",
+        prog="hareef.sarf.export_onnx",
         description="Export a model checkpoint to onnx",
     )
     parser.add_argument("--config", dest="config", type=str, required=True)
@@ -233,13 +237,13 @@ def main():
         checkpoint_filename, epoch, step = find_last_checkpoint(
             config["logs_root_directory"]
         )
-        model = NabihModel.load_from_checkpoint(
+        model = SarfModel.load_from_checkpoint(
             checkpoint_filename, map_location="cpu", config=config
         )
         _LOGGER.info(f"Using checkpoint from: epoch={epoch} - step={step}")
         _LOGGER.info(f"file: {checkpoint_filename}")
     else:
-        model = NabihModel.load_from_checkpoint(
+        model = SarfModel.load_from_checkpoint(
             args.checkpoint, map_location="cpu", config=config
         )
         _LOGGER.info(f"file: {args.checkpoint}")

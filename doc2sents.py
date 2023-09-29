@@ -237,7 +237,7 @@ def main():
 
     if not args.output:
         doc_path = Path(args.doc)
-        args.output = os.fspath(doc_path.parent.joinpath(f"{doc_path.stem}.txt"))
+        args.output = os.fspath(doc_path.parent.joinpath(f"{doc_path.stem}.sents"))
 
     _LOGGER.info(f"Writing sentences to output file: {args.output}")
 

@@ -13,6 +13,7 @@ import more_itertools
 import numpy as np
 import torch
 from torch import nn, optim
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from tqdm import tqdm
 from diacritization_evaluation.util import extract_haraqat
 from hareef.utils import (
@@ -25,13 +26,12 @@ from lightning.pytorch import LightningModule
 
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules.x_transformers import TransformerWrapper, Encoder
-
+from .modules import HGRU, ScaledSinusoidalEmbedding, TokenEncoder, attentions
 
 _LOGGER = logging.getLogger(__package__)
 
 
-class NabihModel(LightningModule):
+class SarfModel(LightningModule):
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -51,6 +51,7 @@ class NabihModel(LightningModule):
             num_layers=self.config["num_layers"],
             num_heads=self.config["num_heads"],
             max_len=self.config["max_len"],
+            padding_idx=self.input_pad_idx
         )
 
     def _build_layers(
@@ -61,35 +62,67 @@ class NabihModel(LightningModule):
         num_layers,
         num_heads,
         max_len,
+        padding_idx,
     ):
-        self.transformer = TransformerWrapper(
-            num_tokens = inp_vocab_size,
-            max_seq_len = max_len,
-            post_emb_norm=True,
-            attn_layers=Encoder(
-                dim = embedding_dim,
-                depth=num_layers,
-                heads=num_heads,
-                layer_dropout=0.2,
-                attn_dropout=0.1,
-                ff_dropout=0.1,
-                attn_flash=True,
-                cascading_heads=True,
-                alibi_pos_bias=True,
-                alibi_num_heads=num_heads,
-                use_simple_rmsnorm=True,
-                attn_gate_values=True,
-                onnxable=True,
-            )
+        self.emb = nn.Embedding(inp_vocab_size, 96, padding_idx=padding_idx)
+        nn.init.normal_(self.emb.weight, 0.0, 96**-0.5)
+        self.gru = HGRU(
+            96,
+            96,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.2,
+            pad_idx=padding_idx,
+            sum_bidi=True
         )
-        self.fc_out = nn.Linear(inp_vocab_size, targ_vocab_size)
+        self.gru_dropout = nn.Dropout(0.2)
+        self.token_enc = TokenEncoder(
+            144,
+            96,
+            filter_channels=96,
+            n_heads=4,
+            n_layers=6,
+            kernel_size=3,
+            p_dropout=0.2,
+        )
+        self.pos_enc = ScaledSinusoidalEmbedding(96)
+        enc_layer = nn.TransformerEncoderLayer (
+            96,
+            nhead=12,
+            dim_feedforward=96,
+            dropout=0.2,
+            activation=attentions.SnakeBeta(96, 96),
+            batch_first=True
+        )
+        self.attn_layers = nn.TransformerEncoder(
+            enc_layer,
+            num_layers=10,
+            enable_nested_tensor=True
+        )
+        self.res_layernorm = nn.LayerNorm(96)
+        self.fc_out = nn.Linear(96, targ_vocab_size)
 
     def forward(self, inputs, lengths):
         x = inputs.to(self.device)
-        lengths = lengths.to(self.device)
+        lengths = lengths.to('cpu')
 
-        mask = sequence_mask(lengths, max_length=x.shape[-1]).to(self.device)
-        x = self.transformer(x, mask=mask)
+        x = self.emb(x)
+
+        gru_out = self.gru(x, lengths)
+        gru_out = self.gru_dropout(gru_out)
+
+        enc_out, m_p, logs_p, enc_mask = self.token_enc(x, lengths)
+        enc_out = enc_out.permute(0, 2, 1)
+        enc_mask = enc_mask.squeeze(1).bool().logical_not()
+
+        pos_enc = self.pos_enc(x)
+        attn_input = x + pos_enc
+        attn_out = self.attn_layers(attn_input, src_key_padding_mask=enc_mask)
+
+        x = (gru_out * 8) + (enc_out * 5) + (attn_out * 10)
+        x = self.res_layernorm(x)
+
         x = self.fc_out(x)
         return x
 

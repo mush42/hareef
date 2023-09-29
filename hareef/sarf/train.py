@@ -16,9 +16,9 @@ from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
 from .config import Config
 from .dataset import load_test_data, load_training_data, load_validation_data
-from .model import NabihModel
+from .model import SarfModel
 
-_LOGGER = logging.getLogger("hareef.nabih.train")
+_LOGGER = logging.getLogger("hareef.sarf.train")
 
 
 def main():
@@ -57,7 +57,7 @@ def main():
     logs_root_directory.mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f"Logs directory: {logs_root_directory}")
 
-    model = NabihModel(config)
+    model = SarfModel(config)
 
     checkpoint_save_callbacks = []
     if config["model_save_steps"]:

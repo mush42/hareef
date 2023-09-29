@@ -15,7 +15,7 @@ from tqdm import tqdm
 from .config import Config
 from .diacritizer import TorchDiacritizer, OnnxDiacritizer
 from .dataset import load_test_data, load_validation_data
-from .model import NabihModel
+from .model import SarfModel
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -24,7 +24,7 @@ def error_rates(diacritizer, data_loader, num_batches):
     _LOGGER.info("Calculating DER/WER statistics...")
     try:
         with TemporaryDirectory() as predictions_dir:
-            error_rates = NabihModel.evaluate_with_error_rates(diacritizer, data_loader, num_batches=num_batches, predictions_dir=predictions_dir)
+            error_rates = SarfModel.evaluate_with_error_rates(diacritizer, data_loader, num_batches=num_batches, predictions_dir=predictions_dir)
     except:
         _LOGGER.error("Failed to calculate DER/WER statistics", exc_info=True)
         sys.exit(1)
@@ -56,7 +56,7 @@ def main():
 
 
     parser = argparse.ArgumentParser(
-        prog="hareef.nabih.metrics",
+        prog="hareef.sarf.metrics",
         description="Calculate DER/WER diacritization error rates",
     )
 
@@ -123,7 +123,7 @@ def main():
 
         _LOGGER.info(f"Using checkpoint from: {args.checkpoint}")
         device = args.device if args.device != 'gpu' else 'cuda'
-        model = NabihModel.load_from_checkpoint(
+        model = SarfModel.load_from_checkpoint(
             args.checkpoint, map_location=device, config=config
         )
         model.freeze()
