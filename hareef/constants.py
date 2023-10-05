@@ -44,7 +44,6 @@ class ArabicDiacritics(enum.Enum):
         return {
             cls.NO_DIACRITIC,
             cls.SUKOON,
-            cls.SHADDA,
             cls.DAMMA,
             cls.FATHA,
             cls.KASRA,

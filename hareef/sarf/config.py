@@ -43,6 +43,6 @@ class Config:
     def get_inference_config(self):
         token_config = self.text_encoder.dump_tokens()
         return {
-            "max_length": self["max_len"] - 2,
+            "train_max_length": self["max_len"] - 2,
             **token_config
         }

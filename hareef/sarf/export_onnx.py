@@ -124,9 +124,9 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
         input_lengths = torch.LongTensor([dummy_input_length])
         dummy_input = (char_inputs, input_lengths)
         dynamic_axes={
-            "char_inputs": {0: "batch_size", 1: "time"},
-            "input_lengths": {0: "batch_size"},
-            "output": {0: "batch_size", 1: "time"},
+            "char_inputs": {0: "batch", 1: "seq"},
+            "input_lengths": {0: "batch"},
+            "output": {0: "batch", 1: "seq"},
         }
 
     model.forward = _forward_pass
@@ -185,11 +185,7 @@ def quantize(input_model_path, config, fix_dims):
         max_len=config["max_len"]
     )
 
-    q_conf = PostTrainingQuantConfig(
-        domain='nlp',
-        inputs=["char_inputs", "input_lengths"],
-        outputs=["output"]
-    )
+    q_conf = PostTrainingQuantConfig(domain='nlp')
     q_accuracy = QuantCategoricalAccuracy(config)
     q_model = quantization.fit(
         model=input_model_path,

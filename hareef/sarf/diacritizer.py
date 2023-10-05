@@ -51,6 +51,7 @@ class Diacritizer:
             self.text_encoder.input_to_sequence(ps[1])
             for ps in parsed_sents
         ]
+        char_seqs = list(filter(None, char_seqs))
         lengths = [len(seq) for seq in char_seqs]
         max_len = max(lengths)
 

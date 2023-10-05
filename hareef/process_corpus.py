@@ -9,7 +9,7 @@ from functools import reduce, partial
 from pathlib import Path
 
 from diacritization_evaluation.util import extract_haraqat
-from more_itertools import collapse
+from more_itertools import collapse, windowed
 from tqdm import tqdm
 
 from .text_cleaners import collapse_whitespace
@@ -25,9 +25,6 @@ INVALID_SEQUENCES = {
     "ًّ": "ًّ",
     "ٍّ": "ٍّ",
     "ٌّ": "ٌّ",
-    "ًا": "اً",
-    "ٌا": "اٌ",
-    "ٍا": "اٍ",
     " ،": "،",
     " .": ".",
 }
@@ -69,9 +66,6 @@ def _do_segment_sentences(line, max_chars):
         for sent in sents:
             if 0 < len(sent) <= max_chars:
                 sent = collapse_whitespace(sent.rstrip())
-                # eliminate very short sentences
-                if sent.count(" ") < 3:
-                    continue
                 yield sent
             else:
                 lines.append(sent)
@@ -131,6 +125,24 @@ def process_corpus_arg_parser():
     )
     parser.add_argument("--n-val", type=int, help="Number of validation sentences")
     parser.add_argument("--n-test", type=int, help="Number of test sentences")
+    parser.add_argument(
+        "-w",
+        "--windowed",
+        action="store_true",
+        help="Create windowed dataset"
+    )
+    parser.add_argument(
+        "--w-len",
+        type=int,
+        default=12,
+        help="window length in words"
+    )
+    parser.add_argument(
+        "--w-stride",
+        type=int,
+        default=4,
+        help="Steps between adjacent widnows"
+    )
     parser.add_argument(
         "--workers", type=int, default=0, help="Number of processes used"
     )
@@ -202,6 +214,29 @@ def main(args):
         lines = list(filter(None, processed_lines))
         _LOGGER.info(f"Ignored: {total_lines - len(lines)}")
         _LOGGER.info(f"Num valid sentences: {len(lines)}")
+
+    if args.windowed:
+        _LOGGER.info(
+            "Making windowed dataset "
+            f"(window length: {args.w_len} words, "
+            f"and stride of {args.w_stride}"
+        )
+        wlen, wstep = args.w_len, args.w_stride
+        windows = []
+        for line in lines:
+            gen_wins = windowed(
+                line.split(" "),
+                wlen,
+                fillvalue="",
+                step=wstep
+            )
+            windows.extend(
+                " ".join(win)
+                for win in gen_wins
+            )
+        lines = windows
+        _LOGGER.info(f"Total number of generated windows: {len(lines)}")
+
 
     _LOGGER.info("Shuffling lines")
     random.shuffle(lines)

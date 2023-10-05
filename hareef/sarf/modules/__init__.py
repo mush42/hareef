@@ -9,7 +9,73 @@ from torch import einsum
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from . import commons
-from . import attentions
+from .attentions import Encoder
+
+
+class SnakeBeta(nn.Module):
+    """
+    A modified Snake function which uses separate parameters for the magnitude of the periodic components
+    Shape:
+        - Input: (B, C, T)
+        - Output: (B, T, C), same shape as the input
+    Parameters:
+        - alpha - trainable parameter that controls frequency
+        - beta - trainable parameter that controls magnitude
+    References:
+        - This activation function is a modified version based on this paper by Liu Ziyin, Tilman Hartwig, Masahito Ueda:
+        https://arxiv.org/abs/2006.08195
+    Examples:
+        >>> a1 = snakebeta(256)
+        >>> x = torch.randn(256)
+        >>> x = a1(x)
+    """
+
+    def __init__(self, in_features, out_features, alpha=1.0, alpha_trainable=True, alpha_logscale=True):
+        """
+        Initialization.
+        INPUT:
+            - in_features: shape of the input
+            - alpha - trainable parameter that controls frequency
+            - beta - trainable parameter that controls magnitude
+            alpha is initialized to 1 by default, higher values = higher-frequency.
+            beta is initialized to 1 by default, higher values = higher-magnitude.
+            alpha will be trained along with the rest of your model.
+        """
+        super().__init__()
+        self.in_features = out_features if isinstance(out_features, list) else [out_features]
+        self.proj = nn.Linear(in_features, out_features)
+
+        # initialize alpha
+        self.alpha_logscale = alpha_logscale
+        if self.alpha_logscale:  # log scale alphas initialized to zeros
+            self.alpha = nn.Parameter(torch.zeros(self.in_features) * alpha)
+            self.beta = nn.Parameter(torch.zeros(self.in_features) * alpha)
+        else:  # linear scale alphas initialized to ones
+            self.alpha = nn.Parameter(torch.ones(self.in_features) * alpha)
+            self.beta = nn.Parameter(torch.ones(self.in_features) * alpha)
+
+        self.alpha.requires_grad = alpha_trainable
+        self.beta.requires_grad = alpha_trainable
+
+        self.no_div_by_zero = 0.000000001
+
+    def forward(self, x):
+        """
+        Forward pass of the function.
+        Applies the function to the input elementwise.
+        SnakeBeta ∶= x + 1/b * sin^2 (xa)
+        """
+        x = self.proj(x)
+        if self.alpha_logscale:
+            alpha = torch.exp(self.alpha)
+            beta = torch.exp(self.beta)
+        else:
+            alpha = self.alpha
+            beta = self.beta
+
+        x = x + (1.0 / (beta + self.no_div_by_zero)) * torch.pow(torch.sin(x * alpha), 2)
+
+        return x
 
 
 class ScaledSinusoidalEmbedding(nn.Module):
@@ -49,18 +115,10 @@ class TokenEncoder(nn.Module):
         p_dropout: float,
     ):
         super().__init__()
-        self.out_channels = out_channels
         self.hidden_channels = hidden_channels
-        self.filter_channels = filter_channels
-        self.n_heads = n_heads
-        self.n_layers = n_layers
-        self.kernel_size = kernel_size
-        self.p_dropout = p_dropout
-
-        self.encoder = attentions.Encoder(
+        self.encoder = Encoder(
             hidden_channels, filter_channels, n_heads, n_layers, kernel_size, p_dropout
         )
-        self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
     def forward(self, x, x_lengths):
         x = x * math.sqrt(self.hidden_channels)  # [b, t, h]
@@ -68,13 +126,8 @@ class TokenEncoder(nn.Module):
         x_mask = torch.unsqueeze(
             commons.sequence_mask(x_lengths, x.size(2)), 1
         ).type_as(x)
-
         x = self.encoder(x * x_mask, x_mask)
-        stats = self.proj(x) * x_mask
-
-        m, logs = torch.split(stats, self.out_channels, dim=1)
-        return x, m, logs, x_mask
-
+        return x, x_mask
 
 
 class HGRU(nn.Module):
@@ -94,7 +147,7 @@ class HGRU(nn.Module):
         hx: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         packed_input = pack_padded_sequence(
-            input, lengths, batch_first=self.batch_first
+            input, lengths, batch_first=self.batch_first, enforce_sorted=self.training
         )
         output, hx = self.gru(packed_input, hx)
         output, _lengths = pad_packed_sequence(

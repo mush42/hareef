@@ -13,7 +13,6 @@ import more_itertools
 import numpy as np
 import torch
 from torch import nn, optim
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from tqdm import tqdm
 from diacritization_evaluation.util import extract_haraqat
 from hareef.utils import (
@@ -23,10 +22,10 @@ from hareef.utils import (
     categorical_accuracy,
 )
 from lightning.pytorch import LightningModule
-
+from x_transformers.x_transformers import Encoder
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules import HGRU, ScaledSinusoidalEmbedding, TokenEncoder, attentions
+from .modules import HGRU, SnakeBeta, TokenEncoder
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -64,11 +63,12 @@ class SarfModel(LightningModule):
         max_len,
         padding_idx,
     ):
-        self.emb = nn.Embedding(inp_vocab_size, 96, padding_idx=padding_idx)
-        nn.init.normal_(self.emb.weight, 0.0, 96**-0.5)
+        d_model = 120
+        self.emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=padding_idx)
+        nn.init.normal_(self.emb.weight, 0.0, d_model**-0.5)
         self.gru = HGRU(
-            96,
-            96,
+            d_model,
+            d_model,
             num_layers=2,
             batch_first=True,
             bidirectional=True,
@@ -78,30 +78,26 @@ class SarfModel(LightningModule):
         )
         self.gru_dropout = nn.Dropout(0.2)
         self.token_enc = TokenEncoder(
-            144,
-            96,
-            filter_channels=96,
-            n_heads=4,
+            d_model,
+            d_model,
+            filter_channels=d_model,
             n_layers=6,
-            kernel_size=3,
+            n_heads=6,
+            kernel_size=5,
             p_dropout=0.2,
         )
-        self.pos_enc = ScaledSinusoidalEmbedding(96)
-        enc_layer = nn.TransformerEncoderLayer (
-            96,
-            nhead=12,
-            dim_feedforward=96,
-            dropout=0.2,
-            activation=attentions.SnakeBeta(96, 96),
-            batch_first=True
+        self.attn_layers = Encoder(
+            dim=d_model,
+            depth=6,
+            heads=6,
+            layer_dropout=0.2,
+            ff_dropout=0.2,
+            ff_swish=True,
+            rel_pos_bias=True,
+            onnxable=True
         )
-        self.attn_layers = nn.TransformerEncoder(
-            enc_layer,
-            num_layers=10,
-            enable_nested_tensor=True
-        )
-        self.res_layernorm = nn.LayerNorm(96)
-        self.fc_out = nn.Linear(96, targ_vocab_size)
+        self.res_layernorm = nn.LayerNorm(d_model)
+        self.fc_out = nn.Linear(d_model, targ_vocab_size)
 
     def forward(self, inputs, lengths):
         x = inputs.to(self.device)
@@ -112,15 +108,15 @@ class SarfModel(LightningModule):
         gru_out = self.gru(x, lengths)
         gru_out = self.gru_dropout(gru_out)
 
-        enc_out, m_p, logs_p, enc_mask = self.token_enc(x, lengths)
+        enc_out, enc_mask = self.token_enc(x, lengths)
         enc_out = enc_out.permute(0, 2, 1)
-        enc_mask = enc_mask.squeeze(1).bool().logical_not()
 
-        pos_enc = self.pos_enc(x)
-        attn_input = x + pos_enc
-        attn_out = self.attn_layers(attn_input, src_key_padding_mask=enc_mask)
+        attn_mask = enc_mask.squeeze(1).bool().logical_not()
+        attn_out = self.attn_layers(x, mask=attn_mask)
 
-        x = (gru_out * 8) + (enc_out * 5) + (attn_out * 10)
+        # best weighting factors for inference:
+        # gru: 9, enc: 5, attn: 8
+        x = (gru_out * 5) + (enc_out * 8) + (attn_out * 10)
         x = self.res_layernorm(x)
 
         x = self.fc_out(x)

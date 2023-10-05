@@ -35,8 +35,8 @@ def main():
         help="Device used for inference",
     )
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--input-file", type=str, required=False)
-    parser.add_argument("--output-file", type=str, required=False)
+    parser.add_argument("-f", "--input-file", type=str, required=False)
+    parser.add_argument("-o", "--output-file", type=str, required=False)
     parser.add_argument("--text", dest="text", type=str, required=False)
     split_choices = ['none', 'sentence', 'line']
     parser.add_argument("--split-by", type=str, choices=split_choices, default=split_choices[0], help="Split text  (sentence recommended)")
@@ -98,6 +98,7 @@ def main():
         inputs = input_text.splitlines()
     else:
         inputs = [input_text]
+    inputs = [i for i in inputs if i.strip()]
 
     _LOGGER.info("Running inference on input")
     sents, infer_time = diacritizer.diacritize_text(inputs, args.batch_size)

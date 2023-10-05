@@ -14,7 +14,7 @@ more_itertools==9.1.0
 diacritization-evaluation==0.5
 pysbd==0.3.4
 tqdm == 4.65.0
-x-transformers==1.22.22
+x-transformers==1.23.1
 
 # D3
 PyArabic==0.6.8
