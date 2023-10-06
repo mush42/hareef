@@ -33,39 +33,39 @@ _LOGGER = logging.getLogger(__package__)
 class SarfModel(LightningModule):
     def __init__(self, config):
         super().__init__()
-        self.config = config
-        self.input_pad_idx = self.config.text_encoder.input_pad_id
-        self.target_pad_idx = self.config.text_encoder.target_pad_id
+        hparams = {
+            "inp_vocab_size": config.len_input_symbols,
+            "targ_vocab_size": config.len_target_symbols,
+            "input_pad_idx": config.text_encoder.input_pad_id,
+            "target_pad_idx": config.text_encoder.target_pad_id,
+            **config.config
+        }
+        self.save_hyperparameters(hparams)
 
+        self.config = config
         self.training_step_outputs = {}
         self.val_step_outputs = {}
         self.test_step_outputs = {}
 
-        self.criterion = nn.CrossEntropyLoss(ignore_index=self.target_pad_idx)
-
+        self.criterion = nn.CrossEntropyLoss(ignore_index=self.hparams.target_pad_idx)
         self._build_layers(
-            inp_vocab_size=self.config.len_input_symbols * 3,
-            targ_vocab_size=self.config.len_target_symbols,
-            embedding_dim=self.config["embedding_dim"],
-            num_layers=self.config["num_layers"],
-            num_heads=self.config["num_heads"],
-            max_len=self.config["max_len"],
-            padding_idx=self.input_pad_idx
+            d_model=self.hparams.d_model,
+            inp_vocab_size=self.hparams.inp_vocab_size,
+            targ_vocab_size=self.hparams.targ_vocab_size,
+            input_pad_idx=self.hparams.input_pad_idx,
+            target_pad_idx=self.hparams.target_pad_idx
         )
 
     def _build_layers(
         self,
+        d_model,
         inp_vocab_size,
         targ_vocab_size,
-        embedding_dim,
-        num_layers,
-        num_heads,
-        max_len,
-        padding_idx,
+        input_pad_idx,
+        target_pad_idx
     ):
-        d_model = 120
-        self.emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=padding_idx)
-        nn.init.normal_(self.emb.weight, 0.0, d_model**-0.5)
+        self.emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=input_pad_idx)
+        nn.init.normal_(self.emb.weight, -1, 1)
         self.gru = HGRU(
             d_model,
             d_model,
@@ -73,7 +73,7 @@ class SarfModel(LightningModule):
             batch_first=True,
             bidirectional=True,
             dropout=0.2,
-            pad_idx=padding_idx,
+            pad_idx=input_pad_idx,
             sum_bidi=True
         )
         self.gru_dropout = nn.Dropout(0.2)
@@ -152,15 +152,15 @@ class SarfModel(LightningModule):
     def configure_optimizers(self):
         optimizer = optim.Adam(
             self.parameters(),
-            lr=self.config["learning_rate"],
-            betas=tuple(self.config["adam_betas"]),
-            weight_decay=self.config["weight_decay"],
+            lr=self.hparams.learning_rate,
+            betas=tuple(self.hparams.adam_betas),
+            weight_decay=self.hparams.weight_decay,
         )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
-            factor=self.config["lr_factor"],
-            patience=self.config["lr_patience"],
-            min_lr=self.config["min_lr"],
+            factor=self.hparams.lr_factor,
+            patience=self.hparams.lr_patience,
+            min_lr=self.hparams.min_lr,
             mode='min',
             cooldown=1,
         )
@@ -171,9 +171,7 @@ class SarfModel(LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         self._log_epoch_metrics(self.val_step_outputs)
-        if (self.current_epoch + 1) % self.config[
-            "evaluate_with_error_rates_epochs"
-        ] == 0:
+        if ((self.current_epoch + 1) % self.hparams.evaluate_with_error_rates_epochs) == 0:
             data_loader = load_validation_data(self.config)
             diacritizer = TorchDiacritizer(self.config, model=self)
             error_rates = self.evaluate_with_error_rates(
@@ -219,7 +217,7 @@ class SarfModel(LightningModule):
         diac_accuracy = categorical_accuracy(
             predictions.to(self.device),
             targets.to(self.device),
-            self.target_pad_idx,
+            self.hparams.target_pad_idx,
             device=self.device,
         )
 

@@ -66,7 +66,7 @@ def main():
         checkpoint_save_callbacks.append(ModelCheckpoint(every_n_epochs=config["model_save_epochs"]))
 
     wer_early_stop_callback = EarlyStopping(
-        monitor="WER_star", min_delta=0.00, patience=15, mode="min", strict=True
+        monitor="WER", min_delta=0.00, patience=15, mode="min", strict=True
     )
     plugins = []
     if config["use_mixed_precision"]:
