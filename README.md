@@ -14,7 +14,9 @@
 
 Implementation of the following models is considered complete:
 
+- **Sarf**: our own model that uses deep GRU network and transformer encoder layers
 -  **CBHG** model from the paper [Effective Deep Learning Models for Automatic Diacritization of Arabic Text](https://ieeexplore.ieee.org/document/9274427)
+
 
 ## Planned models
 
