@@ -87,7 +87,7 @@ class QuantCategoricalAccuracy:
         return accuracy.item()
 
 
-def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dims=False):
+def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dims=False, max_len=None):
     inp_vocab_size = config.len_input_symbols
     model._infer = model.forward
     if fix_dims:
@@ -97,13 +97,13 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
             output = model._infer(inputs, lengths)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
-            max_logits = torch.max(logits, dim=2).values
             return (
                 predictions.squeeze(0).byte(),
-                max_logits.squeeze(0)
+                logits
             )
 
-        dummy_input_length = config["max_len"]
+        dummy_input_length = config["max_len"] if max_len is None else max_len
+        _LOGGER.info(f"Model input  max-len is set to {dummy_input_length}")
         char_inputs = torch.randint(
             low=0, high=inp_vocab_size, size=(dummy_input_length,), dtype=torch.long
         )
@@ -214,6 +214,7 @@ def main():
     parser.add_argument("--simp", action="store_true", help="Simplify the onnx model using onnx-simplifier tool")
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--checkpoint", type=str)
+    parser.add_argument("--max-len", type=int, help="Maximom length when --fix-dims is true")
 
     args = parser.parse_args()
 

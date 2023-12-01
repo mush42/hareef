@@ -120,14 +120,11 @@ class TokenEncoder(nn.Module):
             hidden_channels, filter_channels, n_heads, n_layers, kernel_size, p_dropout
         )
 
-    def forward(self, x, x_lengths):
+    def forward(self, x, mask):
         x = x * math.sqrt(self.hidden_channels)  # [b, t, h]
         x = torch.transpose(x, 1, -1)  # [b, h, t]
-        x_mask = torch.unsqueeze(
-            commons.sequence_mask(x_lengths, x.size(2)), 1
-        ).type_as(x)
-        x = self.encoder(x * x_mask, x_mask)
-        return x, x_mask
+        x = self.encoder(x * mask, mask)
+        return x
 
 
 class HGRU(nn.Module):

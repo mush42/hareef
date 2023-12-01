@@ -69,30 +69,21 @@ class SarfModel(LightningModule):
         self.gru = HGRU(
             d_model,
             d_model,
-            num_layers=2,
+            num_layers=6,
             batch_first=True,
             bidirectional=True,
-            dropout=0.2,
+            dropout=0.1,
             pad_idx=input_pad_idx,
             sum_bidi=True
         )
         self.gru_dropout = nn.Dropout(0.2)
-        self.token_enc = TokenEncoder(
-            d_model,
-            d_model,
-            filter_channels=d_model,
-            n_layers=6,
-            n_heads=6,
-            kernel_size=5,
-            p_dropout=0.2,
-        )
         self.attn_layers = Encoder(
             dim=d_model,
             depth=6,
-            heads=6,
+            heads=8,
             layer_dropout=0.2,
             ff_dropout=0.2,
-            ff_swish=True,
+            ff_relu_squared=True,
             rel_pos_bias=True,
             onnxable=True
         )
@@ -102,21 +93,20 @@ class SarfModel(LightningModule):
     def forward(self, inputs, lengths):
         x = inputs.to(self.device)
         lengths = lengths.to('cpu')
+        length_mask = sequence_mask(lengths, x.size(1)).type_as(x)
 
         x = self.emb(x)
 
         gru_out = self.gru(x, lengths)
         gru_out = self.gru_dropout(gru_out)
 
-        enc_out, enc_mask = self.token_enc(x, lengths)
-        enc_out = enc_out.permute(0, 2, 1)
-
-        attn_mask = enc_mask.squeeze(1).bool().logical_not()
+        attn_mask = length_mask.bool().logical_not()
         attn_out = self.attn_layers(x, mask=attn_mask)
 
         # best weighting factors for inference:
         # gru: 9, enc: 5, attn: 8
-        x = (gru_out * 5) + (enc_out * 8) + (attn_out * 10)
+        x = (gru_out * 8) + (attn_out * 10)
+        x = nn.functional.leaky_relu(x)
         x = self.res_layernorm(x)
 
         x = self.fc_out(x)

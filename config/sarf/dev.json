@@ -6,7 +6,7 @@
   "data_separator": "|",
   "diacritics_separator": "*",
   "max_len": 402,
-  "d_model": 120,
+  "d_model": 48,
   "learning_rate": 1e-3,
   "batch_size": 16,
   "warmup_steps": null,
