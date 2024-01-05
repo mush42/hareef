@@ -7,28 +7,38 @@ from functools import cached_property
 from itertools import chain
 from typing import Any, Optional
 
-from hareef.text_cleaners import valid_arabic_cleaner
+from hareef.text_cleaners import valid_vocab_char_cleaner
 from hareef.constants import (
     ALL_VALID_DIACRITICS,
     ARABIC_LETTERS,
+    DIACRITIC_CHARS,
+    DIACRITIC_LABELS,
+    NUMERAL_CHARS,
     PUNCTUATIONS,
     WORD_SEPARATOR,
-    DIACRITIC_LABELS,
 )
 
 
 PAD = "_"
+NUM = "#"
 INPUT_TOKENS = [
     PAD,
     WORD_SEPARATOR,
+    NUM,
     *sorted(chain(PUNCTUATIONS, ARABIC_LETTERS)),
 ]
 TARGET_TOKENS = [PAD, *sorted(ALL_VALID_DIACRITICS)]
+MODEL_VOCAB = frozenset(set(INPUT_TOKENS) | set(DIACRITIC_CHARS)) 
+NUMERAL_TRANSLATION_TABLE = str.maketrans(
+    "".join(NUMERAL_CHARS),
+    NUM * len(NUMERAL_CHARS)
+)
 
 
 @dataclasses.dataclass
 class TokenConfig:
     pad: str
+    num: str
     input_tokens: list[str]
     target_tokens: list[str]
 
@@ -40,6 +50,7 @@ class TokenConfig:
     def default(cls):
         return cls(
             pad=PAD,
+            num=NUM,
             input_tokens=INPUT_TOKENS,
             target_tokens=TARGET_TOKENS,
         )
@@ -68,6 +79,9 @@ class TextEncoder:
         self.input_pad_id = self.input_symbol_to_id[self.pad]
         self.target_pad_id = self.target_symbol_to_id[self.pad]
 
+        self.num = self.config.num
+        self.input_num_id = self.input_symbol_to_id[self.num]
+
         self.meta_input_token_ids = {
             self.input_pad_id,
         }
@@ -76,7 +90,7 @@ class TextEncoder:
         }
 
     def input_to_sequence(self, text: str) -> list[int]:
-        seq = [self.input_symbol_to_id[s] for s in text]
+        seq = [self.input_symbol_to_id[c] for c in text]
         return seq
 
     def target_to_sequence(self, diacritics: str) -> list[int]:
@@ -98,7 +112,8 @@ class TextEncoder:
         ]
 
     def clean(self, text):
-        return valid_arabic_cleaner(text)
+        text = text.translate(NUMERAL_TRANSLATION_TABLE)
+        return valid_vocab_char_cleaner(text, MODEL_VOCAB)
 
     def combine_text_and_diacritics(self, input_ids: list[int], output_ids: list[int]):
         """
@@ -127,6 +142,7 @@ class TextEncoder:
     def dump_tokens(self) -> dict[Any, Any]:
         data = {
             "pad": self.config.pad,
+            "num": self.config.num,
             "input_id_map": dict(self.input_symbol_to_id),
             "target_id_map": dict(self.target_symbol_to_id),
         }

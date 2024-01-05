@@ -23,5 +23,11 @@ def valid_arabic_cleaner(text):
     return text.strip()
 
 
+def valid_vocab_char_cleaner(text, vocab_chars):
+    text = filter(lambda c: c in vocab_chars, text)
+    text = collapse_whitespace("".join(list(text)))
+    return text.strip()
+
+
 def diacritics_cleaner(text: str) -> str:
     return text.translate(str.maketrans("", "", "".join(DIACRITIC_CHARS)))

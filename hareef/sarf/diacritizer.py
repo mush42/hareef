@@ -8,7 +8,6 @@ import numpy as np
 import onnxruntime
 import torch
 from diacritization_evaluation.util import extract_haraqat
-from hareef.text_cleaners import valid_arabic_cleaner
 from more_itertools import padded, chunked
 from tqdm import tqdm
 
@@ -44,7 +43,7 @@ class Diacritizer:
         return outputs, statistics.mean(infer_times)
 
     def _do_diacritize_text(self, sentences: list[str]):
-        sentences = [valid_arabic_cleaner(sent) for sent in sentences]
+        sentences = [self.text_encoder.clean(sent) for sent in sentences]
 
         parsed_sents = [extract_haraqat(sent) for sent in sentences] # -> (original, characters, diacritics)
         char_seqs = [

@@ -70,9 +70,9 @@ WORD_SEPARATOR = chr(0x20)
 ARABIC_LETTERS = frozenset(
     {chr(x) for x in (list(range(0x0621, 0x63B)) + list(range(0x0641, 0x064B)))}
 )
-PUNCTUATIONS = frozenset({".", "،", ":", "؛", "-", "؟", "!", "(", ")", "[", "]", '"', "«", "»",})
+PUNCTUATIONS = frozenset({".", "،", ":", "؛", "-", "؟", "!", "(", ")", "[", "]", '"', "«", "»", "/",})
 DIACRITIC_CHARS = {diac.value for diac in ArabicDiacritics.chars()}
-ALL_VALID_DIACRITICS = {m.value for m in ArabicDiacritics.valid()} 
+ALL_VALID_DIACRITICS = {m.value for m in ArabicDiacritics.valid()}
 DIACRITIC_LABELS = ArabicDiacritics.diacritic_to_label()
 VALID_ARABIC_CHARS = {WORD_SEPARATOR, *ARABIC_LETTERS, *PUNCTUATIONS, *DIACRITIC_CHARS}
 ARABIC_VOWELS = {
@@ -82,3 +82,6 @@ ARABIC_VOWELS = {
 SENTENCE_DELIMITERS = {".", "؟", "!", "،", ":", "؛", "(", ")", "[", "]", '"', "«", "»",}
 WORD_DELIMITERS = {WORD_SEPARATOR, *SENTENCE_DELIMITERS}
 
+_ARABIC_NUMERALS = [str(i) for i in range(10)]
+_INDIAN_NUMERALS = [chr(c) for c in range(0x660, 0x66a)]
+NUMERAL_CHARS = _ARABIC_NUMERALS + _INDIAN_NUMERALS

@@ -33,6 +33,8 @@ INVALID_SEQUENCES = {
 def validate_diacritics(line):
     try:
         text, inputs, diacritics = extract_haraqat(line)
+        if "ّ" in diacritics:
+            return
         if any(diacritics):
             return text
     except ValueError:
@@ -155,7 +157,7 @@ def process_corpus_arg_parser():
     return parser
 
 
-def main(args):
+def main(args, line_process_func=None):
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -240,6 +242,9 @@ def main(args):
 
     _LOGGER.info("Shuffling lines")
     random.shuffle(lines)
+
+    if line_process_func is not None:
+        lines = [line_process_func(line) for line in lines]
 
     n_lines = len(lines)
 

@@ -47,13 +47,12 @@ class SarfModel(LightningModule):
         self.val_step_outputs = {}
         self.test_step_outputs = {}
 
-        self.criterion = nn.CrossEntropyLoss(ignore_index=self.hparams.target_pad_idx)
+        self.criterion = nn.CrossEntropyLoss(ignore_index=-100)
         self._build_layers(
             d_model=self.hparams.d_model,
             inp_vocab_size=self.hparams.inp_vocab_size,
             targ_vocab_size=self.hparams.targ_vocab_size,
             input_pad_idx=self.hparams.input_pad_idx,
-            target_pad_idx=self.hparams.target_pad_idx
         )
 
     def _build_layers(
@@ -62,7 +61,6 @@ class SarfModel(LightningModule):
         inp_vocab_size,
         targ_vocab_size,
         input_pad_idx,
-        target_pad_idx
     ):
         self.emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=input_pad_idx)
         nn.init.normal_(self.emb.weight, -1, 1)
@@ -207,7 +205,7 @@ class SarfModel(LightningModule):
         diac_accuracy = categorical_accuracy(
             predictions.to(self.device),
             targets.to(self.device),
-            self.hparams.target_pad_idx,
+            -100,
             device=self.device,
         )
 

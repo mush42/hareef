@@ -61,9 +61,11 @@ def collate_fn(data):
     Padding the input and output sequences
     """
 
-    def merge(sequences):
+    def merge(sequences, pad_idx=0):
         lengths = [len(seq) for seq in sequences]
         padded_seqs = torch.zeros(len(sequences), max(lengths)).long()
+        if pad_idx != 0:
+            padded_seqs = padded_seqs + pad_idx
         for i, seq in enumerate(sequences):
             end = lengths[i]
             padded_seqs[i, :end] = seq[:end]
@@ -76,7 +78,7 @@ def collate_fn(data):
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     src_seqs, src_lengths = merge(src_seqs)
-    trg_seqs, trg_lengths = merge(trg_seqs)
+    trg_seqs, trg_lengths = merge(trg_seqs, pad_idx=-100)
 
     batch = {
         "original": original,

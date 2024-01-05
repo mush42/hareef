@@ -59,15 +59,25 @@ def main():
 
     model = SarfModel(config)
 
-    checkpoint_save_callbacks = []
+    callbacks = []
     if config["model_save_steps"]:
-        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_train_steps=config["model_save_steps"]))
+        callbacks.append(
+            ModelCheckpoint(every_n_train_steps=config["model_save_steps"])
+        )
     if config["model_save_epochs"]:
-        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_epochs=config["model_save_epochs"]))
+        callbacks.append(
+            ModelCheckpoint(every_n_epochs=config["model_save_epochs"])
+        )
 
-    wer_early_stop_callback = EarlyStopping(
-        monitor="WER", min_delta=0.00, patience=15, mode="min", strict=True
-    )
+    if config["wer_early_stopping"]:
+        wer_early_stop_callback = EarlyStopping(
+            monitor="WER",
+            min_delta=0.00,
+            patience=15,
+            mode="min",
+            strict=True
+        )
+        callbacks.append(wer_early_stop_callback)
     plugins = []
     if config["use_mixed_precision"]:
         _LOGGER.info("Configuring automatic mixed precision")
@@ -85,10 +95,7 @@ def main():
         accelerator=args.accelerator,
         devices=args.devices,
         check_val_every_n_epoch=config["evaluate_epochs"],
-        callbacks=[
-            wer_early_stop_callback,
-            *checkpoint_save_callbacks,
-        ],
+        callbacks=callbacks,
         plugins=plugins,
         max_epochs=config["max_epochs"],
         enable_progress_bar=True,
