@@ -5,7 +5,7 @@
   "is_data_preprocessed": false,
   "data_separator": "|",
   "diacritics_separator": "*",
-  "max_len": 402,
+  "max_len": 282,
   "d_model": 48,
   "learning_rate": 1e-3,
   "batch_size": 16,
@@ -22,7 +22,7 @@
   "wer_early_stopping": true,
   "evaluate_epochs": 1,
   "evaluate_with_error_rates_epochs": 1,
-  "model_save_steps": 2000,
+  "model_save_steps": null,
   "model_save_epochs": 1,
   "error_rates_n_batches": 512
 }

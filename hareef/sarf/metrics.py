@@ -136,7 +136,7 @@ def main():
     )
 
     if args.subcommand == 'rates':
-        num_batches = args.num_batches or 15
+        num_batches = args.num_batches or len(data_loader)
         return error_rates(diacritizer, data_loader, num_batches=num_batches)
     elif args.subcommand == 'conmat':
         num_batches = args.num_batches or 20

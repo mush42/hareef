@@ -22,10 +22,13 @@ from hareef.utils import (
     categorical_accuracy,
 )
 from lightning.pytorch import LightningModule
-from x_transformers.x_transformers import Encoder
+
+
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules import HGRU, SnakeBeta, TokenEncoder
+from .modules.conformer import ConformerBlock
+
+
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -38,7 +41,8 @@ class SarfModel(LightningModule):
             "targ_vocab_size": config.len_target_symbols,
             "input_pad_idx": config.text_encoder.input_pad_id,
             "target_pad_idx": config.text_encoder.target_pad_id,
-            **config.config
+            **config.config,
+         "inference": config.text_encoder.dump_tokens(),
         }
         self.save_hyperparameters(hparams)
 
@@ -64,27 +68,15 @@ class SarfModel(LightningModule):
     ):
         self.emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=input_pad_idx)
         nn.init.normal_(self.emb.weight, -1, 1)
-        self.gru = HGRU(
-            d_model,
-            d_model,
-            num_layers=6,
-            batch_first=True,
-            bidirectional=True,
-            dropout=0.1,
-            pad_idx=input_pad_idx,
-            sum_bidi=True
+        self.dense = nn.Sequential(
+            nn.Linear(d_model, 256),
+            nn.Linear(256, 128),
+            nn.Linear(128, d_model)
         )
-        self.gru_dropout = nn.Dropout(0.2)
-        self.attn_layers = Encoder(
-            dim=d_model,
-            depth=6,
-            heads=8,
-            layer_dropout=0.2,
-            ff_dropout=0.2,
-            ff_relu_squared=True,
-            rel_pos_bias=True,
-            onnxable=True
-        )
+        self.attn_layers = nn.ModuleList([
+            ConformerBlock(d_model, ffm_dropout=0.2, attn_dropout=0.2, ccm_dropout=0.2)
+            for _ in range(12)
+        ])
         self.res_layernorm = nn.LayerNorm(d_model)
         self.fc_out = nn.Linear(d_model, targ_vocab_size)
 
@@ -93,18 +85,15 @@ class SarfModel(LightningModule):
         lengths = lengths.to('cpu')
         length_mask = sequence_mask(lengths, x.size(1)).type_as(x)
 
-        x = self.emb(x)
+        emb = self.emb(x)
+        emb = self.dense(emb)
 
-        gru_out = self.gru(x, lengths)
-        gru_out = self.gru_dropout(gru_out)
+        attn_mask = length_mask.bool().logical_not().t()
+        x = emb
+        for attn_layer in self.attn_layers:
+            x = attn_layer(x, lengths, key_padding_mask=attn_mask)
 
-        attn_mask = length_mask.bool().logical_not()
-        attn_out = self.attn_layers(x, mask=attn_mask)
-
-        # best weighting factors for inference:
-        # gru: 9, enc: 5, attn: 8
-        x = (gru_out * 8) + (attn_out * 10)
-        x = nn.functional.leaky_relu(x)
+        x = x + emb
         x = self.res_layernorm(x)
 
         x = self.fc_out(x)
