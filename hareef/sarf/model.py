@@ -23,10 +23,9 @@ from hareef.utils import (
 )
 from lightning.pytorch import LightningModule
 
-
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules.conformer import ConformerBlock
+from .modules.conformer import ConformerBlock, ScaledSinusoidalEmbedding
 
 
 
@@ -38,11 +37,12 @@ class SarfModel(LightningModule):
         super().__init__()
         hparams = {
             "inp_vocab_size": config.len_input_symbols,
+            "hint_vocab_size": config.len_hint_symbols,
             "targ_vocab_size": config.len_target_symbols,
             "input_pad_idx": config.text_encoder.input_pad_id,
             "target_pad_idx": config.text_encoder.target_pad_id,
             **config.config,
-         "inference": config.text_encoder.dump_tokens(),
+            "inference": config.text_encoder.dump_tokens(),
         }
         self.save_hyperparameters(hparams)
 
@@ -55,6 +55,7 @@ class SarfModel(LightningModule):
         self._build_layers(
             d_model=self.hparams.d_model,
             inp_vocab_size=self.hparams.inp_vocab_size,
+            hint_vocab_size=self.hparams.hint_vocab_size,
             targ_vocab_size=self.hparams.targ_vocab_size,
             input_pad_idx=self.hparams.input_pad_idx,
         )
@@ -63,11 +64,15 @@ class SarfModel(LightningModule):
         self,
         d_model,
         inp_vocab_size,
+        hint_vocab_size,
         targ_vocab_size,
         input_pad_idx,
     ):
-        self.emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=input_pad_idx)
-        nn.init.normal_(self.emb.weight, -1, 1)
+        self.char_emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=input_pad_idx)
+        self.diac_emb = nn.Embedding(hint_vocab_size, d_model, padding_idx=input_pad_idx)
+        nn.init.uniform_(self.char_emb.weight, -1, 1)
+        nn.init.uniform_(self.diac_emb.weight, -1, 1)
+        self.pos_enc = ScaledSinusoidalEmbedding(dim=48)
         self.dense = nn.Sequential(
             nn.Linear(d_model, 256),
             nn.Linear(256, 128),
@@ -80,13 +85,13 @@ class SarfModel(LightningModule):
         self.res_layernorm = nn.LayerNorm(d_model)
         self.fc_out = nn.Linear(d_model, targ_vocab_size)
 
-    def forward(self, inputs, lengths):
-        x = inputs.to(self.device)
-        lengths = lengths.to('cpu')
-        length_mask = sequence_mask(lengths, x.size(1)).type_as(x)
+    def forward(self, char_inputs, diac_inputs, lengths):
+        length_mask = sequence_mask(lengths, char_inputs.size(1)).type_as(char_inputs)
 
-        emb = self.emb(x)
-        emb = self.dense(emb)
+        char_emb = self.char_emb(char_inputs)
+        diac_emb = self.diac_emb(diac_inputs)
+        emb = self.dense(char_emb + diac_emb)
+        emb = emb + self.pos_enc(emb)
 
         attn_mask = length_mask.bool().logical_not().t()
         x = emb
@@ -99,8 +104,8 @@ class SarfModel(LightningModule):
         x = self.fc_out(x)
         return x
 
-    def predict(self, inputs, lengths):
-        output = self(inputs, lengths)
+    def predict(self, char_inputs, diac_inputs, lengths):
+        output = self(char_inputs, diac_inputs, lengths)
         logits = output.softmax(dim=2)
         predictions = torch.argmax(logits, dim=2)
         return predictions.byte(), logits
@@ -182,7 +187,11 @@ class SarfModel(LightningModule):
             values.clear()
 
     def _process_batch(self, batch):
-        predictions = self(batch["src"], batch["lengths"])
+        predictions = self(
+            batch["chars"].to(self.device),
+            batch["diacs"].to(self.device),
+            batch["lengths"].to("cpu")
+        )
         target = batch["target"].contiguous()
 
         predictions = predictions.view(-1, predictions.shape[-1])
@@ -220,7 +229,7 @@ class SarfModel(LightningModule):
             unit="batch",
         ):
             gt_lines = batch["original"]
-            predicted, __ = diacritizer.diacritize_text(gt_lines)
+            predicted, __ = diacritizer.diacritize_text(gt_lines, full_hints=False)
             all_orig.extend(gt_lines)
             all_predicted.extend(predicted)
 

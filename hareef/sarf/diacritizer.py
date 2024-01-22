@@ -8,8 +8,9 @@ import numpy as np
 import onnxruntime
 import torch
 from diacritization_evaluation.util import extract_haraqat
-from more_itertools import padded, chunked
 from tqdm import tqdm
+
+from .dataset import load_inference_data
 
 
 # Sentinel
@@ -24,47 +25,39 @@ class Diacritizer:
         self.text_encoder = self.config.text_encoder
         self.input_pad_id = self.text_encoder.input_pad_id
 
-    def diacritize_text(self, sentences: list[str], batch_size=_missing):
+    def diacritize_text(self, sentences: list[str], *, full_hints=True, batch_size=_missing):
         if batch_size is _missing:
             batch_size = self.config["batch_size"]
         elif not batch_size:
             batch_size = len(sentences)
 
-        if (len(sentences) / batch_size) <= 1.0:
-            return self._do_diacritize_text(sentences)
+        infer_loader = load_inference_data(self.config, sentences, batch_size=batch_size)
 
-        batches = list(chunked(sentences, batch_size))
+        if len(infer_loader) == 1:
+            for batch in infer_loader:
+                return self._do_diacritize_text(batch, full_hints)
+
         outputs = []
         infer_times = []
-        for batch in tqdm(batches, total=len(batches)):
-            sents, infer_time = self._do_diacritize_text(batch)
+        for batch in tqdm(infer_loader, total=len(infer_loader)):
+            sents, infer_time = self._do_diacritize_text(batch, full_hints)
             outputs.extend(sents)
             infer_times.append(infer_time)
         return outputs, statistics.mean(infer_times)
 
-    def _do_diacritize_text(self, sentences: list[str]):
-        sentences = [self.text_encoder.clean(sent) for sent in sentences]
-
-        parsed_sents = [extract_haraqat(sent) for sent in sentences] # -> (original, characters, diacritics)
-        char_seqs = [
-            self.text_encoder.input_to_sequence(ps[1])
-            for ps in parsed_sents
-        ]
-        char_seqs = list(filter(None, char_seqs))
-        lengths = [len(seq) for seq in char_seqs]
-        max_len = max(lengths)
-
-        if len(char_seqs) > 1:
-            char_seqs = [
-                list(padded(seq, fillvalue=self.input_pad_id, n=max_len))
-                for seq in char_seqs
-            ]
-
-        char_inputs = np.array(char_seqs,  dtype=np.int64)
-        input_lengths = np.array(lengths, dtype=np.int64)
-
+    def _do_diacritize_text(self, batch, full_hints):
+        if not full_hints:
+            # for evaluation when given fully diacritized sentences
+            diac_hints = batch["diacs"]
+        else:
+            target = batch["target"]
+            target[target == -100] = 0
+            diac_hints = target
+        char_inputs = batch["chars"].cpu().numpy()
+        diac_hints = diac_hints.cpu().numpy()
+        input_lengths = batch["lengths"].cpu().numpy()
         start_time = time.perf_counter()
-        predictions, logits = self.diacritize_batch(char_inputs, input_lengths)
+        predictions, logits = self.diacritize_batch(char_inputs, diac_hints, input_lengths)
         infer_time_ms = (time.perf_counter() - start_time) * 1000
 
         sentences = []
@@ -78,7 +71,7 @@ class Diacritizer:
 
         return sentences, infer_time_ms
 
-    def diacritize_batch(self, char_inputs, input_lengths):
+    def diacritize_batch(self, char_inputs, diac_inputs, input_lengths):
         raise NotImplementedError
 
 
@@ -94,12 +87,13 @@ class TorchDiacritizer(Diacritizer):
         self.model = model
         self.device = model.device
 
-    def diacritize_batch(self, char_inputs, input_lengths):
+    def diacritize_batch(self, char_inputs, diac_inputs, input_lengths):
         if self.model is None:
             raise RuntimeError("Called `diacritize_batch` without setting the `model`")
         char_inputs = torch.LongTensor(char_inputs).to(self.device)
+        diac_inputs = torch.LongTensor(diac_inputs).to(self.device)
         input_lengths = torch.LongTensor(input_lengths).to('cpu')
-        indices, logits = self.model.predict(char_inputs, input_lengths)
+        indices, logits = self.model.predict(char_inputs, diac_inputs, input_lengths)
         return (
             indices.detach().cpu().numpy(),
             logits.detach().cpu().numpy(),
@@ -111,9 +105,10 @@ class OnnxDiacritizer(Diacritizer):
         super().__init__(*args, **kwargs)
         self.session = onnxruntime.InferenceSession(onnx_model)
 
-    def diacritize_batch(self, char_inputs, input_lengths):
+    def diacritize_batch(self, char_inputs, diac_inputs, input_lengths):
         inputs = {
             "char_inputs": char_inputs,
+            "diac_inputs": diac_inputs,
             "input_lengths": input_lengths,
         }
         indices, logits = self.session.run(None, inputs)

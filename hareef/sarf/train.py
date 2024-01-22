@@ -40,6 +40,11 @@ def main():
         "--test", action="store_true", help="Run the test after training"
     )
     parser.add_argument(
+        "--state-dict",
+        default=None,
+        help="Load an existing state-dict for parameter (re)initialization",
+    )
+    parser.add_argument(
         "--debug", action="store_true", help="Use fast dev mode of lightning"
     )
 
@@ -58,6 +63,11 @@ def main():
     _LOGGER.info(f"Logs directory: {logs_root_directory}")
 
     model = SarfModel(config)
+
+    if args.state_dict is not None:
+        _LOGGER.info(f"Loading state dict from: {args.state_dict}")
+        state_dict = torch.load(args.state_dict)
+        model.load_state_dict(state_dict)
 
     callbacks = []
     if config["model_save_steps"]:

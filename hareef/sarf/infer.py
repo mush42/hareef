@@ -52,6 +52,9 @@ def main():
         input_text = args.text
     elif args.input_file:
         _LOGGER.info(f"Reading text from file: {args.input_file}")
+        _LOGGER.info("Setting split-by mode to `line` since a file is passed")
+        if args.split_by == 'none':
+            args.split_by = 'line'
         input_text = Path(args.input_file).read_text(encoding="utf-8")
     else:
         _LOGGER.error("You should provide either --text or --input-file")
@@ -101,7 +104,7 @@ def main():
     inputs = [i for i in inputs if i.strip()]
 
     _LOGGER.info("Running inference on input")
-    sents, infer_time = diacritizer.diacritize_text(inputs, args.batch_size)
+    sents, infer_time = diacritizer.diacritize_text(inputs, batch_size=args.batch_size)
 
     if (len(inputs) / args.batch_size) > 1.0:
         _LOGGER.info(f"Average inference time per batch (batch size={args.batch_size}): {infer_time} (ms)")

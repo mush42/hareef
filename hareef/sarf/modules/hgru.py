@@ -14,7 +14,7 @@ class HGRU(nn.Module):
         self.batch_first = self.gru.batch_first
         self.hidden_size = self.gru.hidden_size
         self.bidirectional = self.gru.bidirectional
-        self.pad_idx = pad_idx
+        self.pad_idx = float(pad_idx)
         self.sum_bidi = sum_bidi
 
     def forward(

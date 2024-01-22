@@ -24,6 +24,7 @@ class Config:
 
         self.text_encoder = TextEncoder()
         self.len_input_symbols = len(self.text_encoder.input_symbols)
+        self.len_hint_symbols = len(self.text_encoder.hint_symbols)
         self.len_target_symbols = len(self.text_encoder.target_symbols)
 
     def __getitem__(self, key):

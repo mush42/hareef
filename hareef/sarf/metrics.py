@@ -45,7 +45,7 @@ def confusion_matrix(diacritizer, data_loader, num_batches, plot, fig_save_path)
     for batch in tqdm(more_itertools.take(num_batches, data_loader), total=total, desc="Predicting", unit="batch"):
         batch_lines = batch["original"]
         gt_lines.extend(batch_lines)
-        predicted, __ = diacritizer.diacritize_text(batch_lines)
+        predicted, __ = diacritizer.diacritize_text(batch_lines, full_hints=False)
         pred_lines.extend(predicted)
 
     generate_confusion_matrix(gt_lines, pred_lines, plot, fig_save_path)

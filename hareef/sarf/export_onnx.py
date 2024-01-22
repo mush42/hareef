@@ -34,7 +34,14 @@ class QuantDataLoader:
 
     def make_iterator(self, loader):
         yield from (
-            ((batch["src"], batch["lengths"]), batch["target"])
+            (
+                (
+                    batch["chars"].cpu().numpy(),
+                    batch["diacs"].cpu().numpy(),
+                    batch["lengths"].cpu().numpy()
+                ),
+                batch["target"].cpu().numpy()
+            )
             for batch in iter(loader)
         )
 
@@ -89,12 +96,15 @@ class QuantCategoricalAccuracy:
 
 def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dims=False, max_len=None):
     inp_vocab_size = config.len_input_symbols
+    targ_vocab_size = config.len_target_symbols
+
     model._infer = model.forward
     if fix_dims:
         _LOGGER.info("Fixing input and output dims. Batched input will not be available for the exported model.")
-        def _forward_pass(inputs, lengths):
-            inputs = inputs.unsqueeze(0)
-            output = model._infer(inputs, lengths)
+        def _forward_pass(char_inputs, diac_inputs, lengths):
+            char_inputs = char_inputs.unsqueeze(0)
+            diac_inputs = diac_inputs.unsqueeze(0)
+            output = model._infer(char_inputs, diac_inputs, lengths)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
             return (
@@ -102,32 +112,34 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
                 logits
             )
 
-        dummy_input_length = config["max_len"] if max_len is None else max_len
+        input_max_len = config["max_len"] if max_len is None else max_len
+        dummy_input_shape = (input_max_len,)
         _LOGGER.info(f"Model input  max-len is set to {dummy_input_length}")
-        char_inputs = torch.randint(
-            low=0, high=inp_vocab_size, size=(dummy_input_length,), dtype=torch.long
-        )
-        input_lengths = torch.LongTensor([dummy_input_length])
-        dummy_input = (char_inputs, input_lengths)
         dynamic_axes = None
     else:
-        def _forward_pass(inputs, lengths):
-            output = model._infer(inputs, lengths)
+        def _forward_pass(char_inputs, diac_inputs, lengths):
+            output = model._infer(char_inputs, diac_inputs, lengths)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
             return predictions.byte(), logits
 
-        dummy_input_length = 50
-        char_inputs = torch.randint(
-            low=0, high=inp_vocab_size, size=(1, dummy_input_length), dtype=torch.long
-        )
-        input_lengths = torch.LongTensor([dummy_input_length])
-        dummy_input = (char_inputs, input_lengths)
+        dummy_input_shape = (1, 50)
         dynamic_axes={
             "char_inputs": {0: "batch", 1: "seq"},
+            "diac_inputs": {0: "batch", 1: "seq"},
             "input_lengths": {0: "batch"},
             "output": {0: "batch", 1: "seq"},
         }
+
+    dummy_input_length = dummy_input_shape[-1]
+    char_inputs = torch.randint(
+        low=0, high=inp_vocab_size, size=dummy_input_shape, dtype=torch.long
+    )
+    diac_inputs = torch.randint(
+        low=0, high=targ_vocab_size, size=dummy_input_shape, dtype=torch.long
+    )
+    input_lengths = torch.LongTensor([dummy_input_length])
+    dummy_input = (char_inputs, diac_inputs, input_lengths)
 
     model.forward = _forward_pass
 
@@ -141,7 +153,7 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
         opset_version=opset,
         export_params=True,
         do_constant_folding=True,
-        input_names=["char_inputs", "input_lengths"],
+        input_names=["char_inputs", "diac_inputs", "input_lengths"],
         output_names=["output"],
         dynamic_axes=dynamic_axes
     )

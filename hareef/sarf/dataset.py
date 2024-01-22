@@ -2,6 +2,8 @@
 
 import logging
 import os
+import random
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -49,14 +51,32 @@ class DiacritizationDataset(Dataset):
         data = self.data[id]
         data = self.text_encoder.clean(data)
 
-        text, inputs, diacritics = util.extract_haraqat(data)
+        text, inputs, diacs = util.extract_haraqat(data)
         inputs = torch.Tensor(self.text_encoder.input_to_sequence("".join(inputs)))
-        diacritics = torch.Tensor(self.text_encoder.target_to_sequence(diacritics))
+        diacritics = torch.Tensor(self.text_encoder.target_to_sequence(diacs))
+        hints = self._generate_diac_hints(diacs)
 
-        return inputs, diacritics, text
+        return inputs, hints, diacritics, text
 
+    def _generate_diac_hints(self, diacs, no_hints=False):
+        if no_hints:
+            nh = torch.zeros(len(diacs)) + self.text_encoder.hint_mask_id
+            return nh.long()
+        p = np.random.uniform()
+        shadda_char = self.text_encoder.shadda_char
+        augmented_diacs = []
+        for d in diacs:
+            if (shadda_char in d) and (np.random.beta(7, 14) <= 0.6):
+                augmented_diacs.append(shadda_char)            
+                continue
+            augmented_diacs.append(d)
+        diac_seq = torch.LongTensor(self.text_encoder.hint_to_sequence(augmented_diacs))
+        diac_mask = torch.bernoulli(torch.full(diac_seq.shape, p))
+        diac_seq = diac_seq * diac_mask.long()
+        diac_seq[diac_seq == 0] = self.text_encoder.hint_mask_id
+        return diac_seq
 
-def collate_fn(data):
+def collate_fn(data, enforce_sorted=True):
     """
     Padding the input and output sequences
     """
@@ -71,18 +91,21 @@ def collate_fn(data):
             padded_seqs[i, :end] = seq[:end]
         return padded_seqs, lengths
 
-    data.sort(key=lambda x: len(x[0]), reverse=True)
+    if enforce_sorted:
+        data.sort(key=lambda x: len(x[0]), reverse=True)
 
     # separate source and target sequences
-    src_seqs, trg_seqs, original = zip(*data)
+    src_seqs, hint_seqs, trg_seqs, original = zip(*data)
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     src_seqs, src_lengths = merge(src_seqs)
+    diac_seqs, __ = merge(hint_seqs)
     trg_seqs, trg_lengths = merge(trg_seqs, pad_idx=-100)
 
     batch = {
         "original": original,
-        "src": src_seqs,
+        "chars": src_seqs,
+        "diacs": diac_seqs,
         "target": trg_seqs,
         "lengths": torch.LongTensor(src_lengths),  # src_lengths = trg_lengths
     }
@@ -171,3 +194,22 @@ def load_validation_data(config, **loader_parameters):
     )
     _LOGGER.info(f"Length of valid iterator = {len(valid_iterator)}")
     return valid_iterator
+
+
+def load_inference_data(config, sents, batch_size=None, **loader_parameters):
+    infer_dataset = DiacritizationDataset(
+        config,
+        list(range(len(sents))),
+        sents
+    )
+
+    loader_parameters.setdefault(
+        "batch_size", batch_size or config["batch_size"]
+    )
+    loader_parameters.setdefault("num_workers", 0)
+    infer_iterator = DataLoader(
+        infer_dataset,
+        collate_fn=partial(collate_fn, enforce_sorted=False),
+        **loader_parameters
+    )
+    return infer_iterator
