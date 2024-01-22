@@ -128,7 +128,8 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
             "char_inputs": {0: "batch", 1: "seq"},
             "diac_inputs": {0: "batch", 1: "seq"},
             "input_lengths": {0: "batch"},
-            "output": {0: "batch", 1: "seq"},
+            "predictions": {0: "batch", 1: "seq"},
+            "logits": {0: "batch", 1: "seq"},
         }
 
     dummy_input_length = dummy_input_shape[-1]
@@ -154,7 +155,7 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
         export_params=True,
         do_constant_folding=True,
         input_names=["char_inputs", "diac_inputs", "input_lengths"],
-        output_names=["output"],
+        output_names=["predictions", "logits"],
         dynamic_axes=dynamic_axes
     )
     return output_filename
