@@ -25,7 +25,7 @@ from lightning.pytorch import LightningModule
 
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
-from .modules.conformer import ConformerBlock
+from .modules.conformer import ConformerBlock, ScaledSinusoidalEmbedding
 
 
 
@@ -77,9 +77,10 @@ class SarfModel(LightningModule):
             nn.Linear(256, 128),
             nn.Linear(128, d_model)
         )
+        self.pos_enc = ScaledSinusoidalEmbedding(d_model)
         self.attn_layers = nn.ModuleList([
             ConformerBlock(d_model, ffm_dropout=0.2, attn_dropout=0.2, cgm_dropout=0.2)
-            for _ in range(10)
+            for _ in range(12)
         ])
         self.res_layernorm = nn.LayerNorm(d_model)
         self.fc_out = nn.Linear(d_model, targ_vocab_size)
@@ -90,15 +91,12 @@ class SarfModel(LightningModule):
         char_emb = self.char_emb(char_inputs)
         diac_emb = self.diac_emb(diac_inputs)
         emb = self.dense(char_emb + diac_emb)
+        emb = emb + self.pos_enc(emb)
 
-        attn_mask = length_mask.bool()
-        position_ids = attn_mask.long().cumsum(-1) - 1
-        position_ids.masked_fill_(attn_mask == 0, 1)
-        b, t, d = emb.size()
-        mask = attn_mask.unsqueeze(1).expand(b, t, t).unsqueeze(1)
+        attn_mask = length_mask.bool().logical_not_().t()
         x = emb
         for attn_layer in self.attn_layers:
-            x = attn_layer(x, lengths, mask, position_ids)
+            x = attn_layer(x, lengths, attn_mask)
 
         x = x + emb
         x = self.res_layernorm(x)

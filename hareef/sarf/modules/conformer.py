@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import einsum
 
-from .attention import MultiheadAttention
+# from .attention import MultiheadAttention
 from .hgru import HGRU
 
 
@@ -85,11 +85,11 @@ class AttentionModule(nn.Module):
     def __init__(self, dim, n_head=8, dropout=0.):
         super(AttentionModule, self).__init__()
         self.layernorm = nn.LayerNorm(dim)
-        self.attn = MultiheadAttention(dim, n_head, dropout)
+        self.attn = nn.MultiheadAttention(dim, n_head, dropout)
 
-    def forward(self, x, mask, position_ids):
+    def forward(self, x, mask):
         x = self.layernorm(x)
-        x, _, _ = self.attn(x, attention_mask=mask, position_ids=position_ids)
+        x, _ = self.attn(x, x, x, key_padding_mask=mask)
         return x
 
 
@@ -99,14 +99,14 @@ class ConformerBlock(nn.Module):
         super(ConformerBlock, self).__init__()
         self.ffm1 = FeedForwardModule(dim, ffm_mult, dropout=ffm_dropout)
         self.attn = AttentionModule(dim, n_head, dropout=attn_dropout)
-        self.cgm = ConformerGRUModule(dim, cgm_expansion_factor, dropout=cgm_dropout)
+        self.ccm = ConformerGRUModule(dim, cgm_expansion_factor, dropout=cgm_dropout)
         self.ffm2 = FeedForwardModule(dim, ffm_mult, dropout=ffm_dropout)
         self.post_norm = nn.LayerNorm(dim)
 
-    def forward(self, x, lengths, mask, position_ids):
+    def forward(self, x, lengths, mask):
         x = x + 0.5 * self.ffm1(x)
-        x = x + self.attn(x, mask, position_ids)
-        x = x + self.cgm(x, lengths)
+        x = x + self.attn(x, mask)
+        x = x + self.ccm(x, lengths)
         x = x + 0.5 * self.ffm2(x)
         x = self.post_norm(x)
         return x
