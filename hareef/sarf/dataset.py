@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 from diacritization_evaluation import util
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, BatchSampler, ConcatDataset, WeightedRandomSampler
 from hareef.utils import clamp
 
 
@@ -35,19 +35,7 @@ class DiacritizationDataset(Dataset):
         return len(self.list_ids)
 
     def __getitem__(self, index):
-        "Generates one sample of data"
-        # Select sample
         id = self.list_ids[index]
-        if self.config["is_data_preprocessed"]:
-            data = self.data.iloc[id]
-            inputs = torch.Tensor(self.text_encoder.input_to_sequence(data[1]))
-            targets = torch.Tensor(
-                self.text_encoder.target_to_sequence(
-                    data[2].split(self.config["diacritics_separator"])
-                )
-            )
-            return inputs, targets, data[0]
-
         data = self.data[id]
         data = self.text_encoder.clean(data)
 
@@ -112,85 +100,80 @@ def collate_fn(data, enforce_sorted=True):
     return batch
 
 
-def load_training_data(config, **loader_parameters):
-    if config["is_data_preprocessed"]:
-        path = os.path.join(config.data_dir, "train.csv")
-        train_data = pd.read_csv(
-            path,
-            encoding="utf-8",
-            sep=config["data_separator"],
-            header=None,
-        )
-        training_set = DiacritizationDataset(config, train_data.index, train_data)
-    else:
-        path = os.path.join(config.data_dir, "train.txt")
+def make_dataset_and_sampler(config, data_split, *, max_sents_per_class=None):
+    sampling_config = config["sampling_weights"]
+    paths = {
+        categ: os.path.join(config.data_dir, categ, f"{data_split}.txt")
+        for categ in sampling_config
+    }
+    diac_datasets = {}
+    for ident, path in paths.items():
         with open(path, encoding="utf8") as file:
-            train_data = file.readlines()
-            train_data = [text for text in train_data if len(text) <= config["max_len"]]
-        training_set = DiacritizationDataset(
-            config, [idx for idx in range(len(train_data))], train_data
-        )
+            lines = file.readlines()
+            lines = [line for line in lines if len(line) <= config["max_len"]]
+        if max_sents_per_class:
+            lines = lines[:max_sents_per_class]
+        diac_datasets[ident] = DiacritizationDataset(config, [idx for idx in range(len(lines))], lines)
 
+    dataset_weight = [
+        (dataset, sampling_config[ident])
+        for ident, dataset in diac_datasets.items()
+    ]
+    datasets = [dw[0] for dw in dataset_weight]
+    weights = torch.concat([
+        torch.Tensor([dw[1] for i in range(len(dw[0]))])
+        for dw in dataset_weight
+    ])
+    dataset = ConcatDataset(datasets)
+    wr_sampler = WeightedRandomSampler(
+        weights, num_samples=len(dataset), replacement=True
+    )
+    return dataset, wr_sampler
+
+
+def load_training_data(config, **loader_parameters):
+    dataset, sampler = make_dataset_and_sampler(
+        config,
+        "train",
+        max_sents_per_class=20000
+    )
     loader_parameters.setdefault("batch_size", config["batch_size"])
-    loader_parameters.setdefault("shuffle", True)
+    # loader_parameters.setdefault("shuffle", True)
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
     train_iterator = DataLoader(
-        training_set, collate_fn=collate_fn, **loader_parameters
+        dataset,
+        collate_fn=collate_fn,
+        sampler=sampler,
+        **loader_parameters
     )
     _LOGGER.info(f"Length of training iterator = {len(train_iterator)}")
     return train_iterator
 
 
 def load_test_data(config, **loader_parameters):
-    if config["is_data_preprocessed"]:
-        path = os.path.join(config.data_dir, "test.csv")
-        test_data = pd.read_csv(
-            path,
-            encoding="utf-8",
-            sep=config["data_separator"],
-            header=None,
-        )
-        test_dataset = DiacritizationDataset(config, test_data.index, test_data)
-    else:
-        test_file_name = "test.txt"
-        path = os.path.join(config.data_dir, test_file_name)
-        with open(path, encoding="utf8") as file:
-            test_data = file.readlines()
-        test_data = [text for text in test_data if len(text) <= config["max_len"]]
-        test_dataset = DiacritizationDataset(
-            config, [idx for idx in range(len(test_data))], test_data
-        )
-
+    dataset, sampler = make_dataset_and_sampler(config, "test")
     loader_parameters.setdefault("batch_size", config["batch_size"])
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
-    test_iterator = DataLoader(test_dataset, collate_fn=collate_fn, **loader_parameters)
+    test_iterator = DataLoader(
+        dataset,
+        collate_fn=collate_fn,
+        sampler=sampler,
+        **loader_parameters
+    )
     _LOGGER.info(f"Length of test iterator = {len(test_iterator)}")
     return test_iterator
 
 
 def load_validation_data(config, **loader_parameters):
-    if config["is_data_preprocessed"]:
-        path = os.path.join(config.data_dir, "val.csv")
-        valid_data = pd.read_csv(
-            path,
-            encoding="utf-8",
-            sep=config["data_separator"],
-            header=None,
-        )
-        valid_dataset = DiacritizationDataset(config, valid_data.index, valid_data)
-    else:
-        path = os.path.join(config.data_dir, "val.txt")
-        with open(path, encoding="utf8") as file:
-            valid_data = file.readlines()
-        valid_data = [text for text in valid_data if len(text) <= config["max_len"]]
-        valid_dataset = DiacritizationDataset(
-            config, [idx for idx in range(len(valid_data))], valid_data
-        )
+    dataset, sampler = make_dataset_and_sampler(config, "val")
 
     loader_parameters.setdefault("batch_size", config["batch_size"])
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
     valid_iterator = DataLoader(
-        valid_dataset, collate_fn=collate_fn, **loader_parameters
+        dataset,
+        collate_fn=collate_fn,
+        sampler=sampler,
+        **loader_parameters
     )
     _LOGGER.info(f"Length of valid iterator = {len(valid_iterator)}")
     return valid_iterator

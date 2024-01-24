@@ -85,10 +85,11 @@ class AttentionModule(nn.Module):
     def __init__(self, dim, n_head=8, dropout=0.):
         super(AttentionModule, self).__init__()
         self.layernorm = nn.LayerNorm(dim)
-        self.attn = nn.MultiheadAttention(dim, n_head, dropout)
+        self.attn = nn.MultiheadAttention(dim, n_head, dropout, batch_first=True)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, pos_enc):
         x = self.layernorm(x)
+        x = x + pos_enc
         x, _ = self.attn(x, x, x, key_padding_mask=mask)
         return x
 
@@ -103,9 +104,9 @@ class ConformerBlock(nn.Module):
         self.ffm2 = FeedForwardModule(dim, ffm_mult, dropout=ffm_dropout)
         self.post_norm = nn.LayerNorm(dim)
 
-    def forward(self, x, lengths, mask):
+    def forward(self, x, lengths, mask, pos_enc):
         x = x + 0.5 * self.ffm1(x)
-        x = x + self.attn(x, mask)
+        x = x + self.attn(x, mask, pos_enc)
         x = x + self.ccm(x, lengths)
         x = x + 0.5 * self.ffm2(x)
         x = self.post_norm(x)

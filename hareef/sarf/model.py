@@ -91,12 +91,12 @@ class SarfModel(LightningModule):
         char_emb = self.char_emb(char_inputs)
         diac_emb = self.diac_emb(diac_inputs)
         emb = self.dense(char_emb + diac_emb)
-        emb = emb + self.pos_enc(emb)
 
-        attn_mask = length_mask.bool().logical_not_().t()
+        pos_enc = self.pos_enc(emb)
+        attn_mask = length_mask.bool().logical_not_()
         x = emb
         for attn_layer in self.attn_layers:
-            x = attn_layer(x, lengths, attn_mask)
+            x = attn_layer(x, lengths, attn_mask, pos_enc)
 
         x = x + emb
         x = self.res_layernorm(x)

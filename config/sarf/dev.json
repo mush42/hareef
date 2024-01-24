@@ -2,12 +2,12 @@
   "session_name": "sarf.dev",
   "logs_root_directory": "logs/sarf",
   "data_directory": "data/sarf",
-  "is_data_preprocessed": false,
-  "data_separator": "|",
-  "diacritics_separator": "*",
+  "sampling_weights": {
+    "MSA": 1.0
+  },
   "max_len": 282,
   "d_model": 48,
-  "learning_rate": 5e-4,
+  "learning_rate": 2e-4,
   "batch_size": 16,
   "warmup_steps": 1000,
   "adam_betas": [0.9, 0.99],
