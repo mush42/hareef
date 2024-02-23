@@ -54,15 +54,15 @@ class DiacritizationDataset(Dataset):
         shadda_char = self.text_encoder.shadda_char
         augmented_diacs = []
         for d in diacs:
-            if (shadda_char in d) and (np.random.beta(7, 14) <= 0.6):
-                augmented_diacs.append(shadda_char)            
-                continue
+            if (shadda_char in d) and (random.random() <= 0.4):
+                d = shadda_char
             augmented_diacs.append(d)
         diac_seq = torch.LongTensor(self.text_encoder.hint_to_sequence(augmented_diacs))
         diac_mask = torch.bernoulli(torch.full(diac_seq.shape, p))
         diac_seq = diac_seq * diac_mask.long()
         diac_seq[diac_seq == 0] = self.text_encoder.hint_mask_id
         return diac_seq
+
 
 def collate_fn(data, enforce_sorted=True):
     """
@@ -126,7 +126,7 @@ def make_dataset_and_sampler(config, data_split, *, max_sents_per_class=None):
     ])
     dataset = ConcatDataset(datasets)
     wr_sampler = WeightedRandomSampler(
-        weights, num_samples=len(dataset), replacement=True
+        weights, num_samples=len(dataset), replacement=False
     )
     return dataset, wr_sampler
 
@@ -135,7 +135,7 @@ def load_training_data(config, **loader_parameters):
     dataset, sampler = make_dataset_and_sampler(
         config,
         "train",
-        max_sents_per_class=20000
+        max_sents_per_class=30000
     )
     loader_parameters.setdefault("batch_size", config["batch_size"])
     # loader_parameters.setdefault("shuffle", True)

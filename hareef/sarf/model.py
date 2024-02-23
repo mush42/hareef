@@ -31,6 +31,77 @@ from .modules.conformer import ConformerBlock, ScaledSinusoidalEmbedding
 
 _LOGGER = logging.getLogger(__package__)
 
+class ConvNorm(nn.Module):
+    """A 1-dimensional convolutional layer with optional weight normalization.
+
+    This layer wraps a 1D convolutional layer from PyTorch and applies
+    optional weight normalization. The layer can be used in a similar way to
+    the convolutional layers in PyTorch's `torch.nn` module.
+
+    Args:
+        in_channels (int): The number of channels in the input signal.
+        out_channels (int): The number of channels in the output signal.
+        kernel_size (int, optional): The size of the convolving kernel.
+            Defaults to 1.
+        stride (int, optional): The stride of the convolution. Defaults to 1.
+        padding (int, optional): Zero-padding added to both sides of the input.
+            If `None`, the padding will be calculated so that the output has
+            the same length as the input. Defaults to `None`.
+        dilation (int, optional): Spacing between kernel elements. Defaults to 1.
+        bias (bool, optional): If `True`, add bias after convolution. Defaults to `True`.
+        w_init_gain (str, optional): The weight initialization function to use.
+            Can be either 'linear' or 'relu'. Defaults to 'linear'.
+        use_weight_norm (bool, optional): If `True`, apply weight normalization
+            to the convolutional weights. Defaults to `False`.
+
+    Shapes:
+     - Input: :math:`[N, D, T]`
+
+    - Output: :math:`[N, out_dim, T]` where `out_dim` is the number of output dimensions.
+
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size=1,
+        stride=1,
+        padding=None,
+        dilation=1,
+        bias=True,
+        w_init_gain="linear",
+        use_weight_norm=False,
+    ):
+        super(ConvNorm, self).__init__()  # pylint: disable=super-with-arguments
+        if padding is None:
+            assert kernel_size % 2 == 1
+            padding = int(dilation * (kernel_size - 1) / 2)
+        self.kernel_size = kernel_size
+        self.dilation = dilation
+        self.use_weight_norm = use_weight_norm
+        conv_fn = nn.Conv1d
+        self.conv = conv_fn(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=bias,
+        )
+        nn.init.xavier_uniform_(self.conv.weight, gain=nn.init.calculate_gain(w_init_gain))
+        if self.use_weight_norm:
+            self.conv = nn.utils.weight_norm(self.conv)
+
+    def forward(self, signal, mask=None):
+        conv_signal = self.conv(signal)
+        if mask is not None:
+            # always re-zero output if mask is
+            # available to match zero-padding
+            conv_signal = conv_signal * mask
+        return conv_signal
+
 
 class SarfModel(LightningModule):
     def __init__(self, config):
@@ -72,35 +143,52 @@ class SarfModel(LightningModule):
         self.diac_emb = nn.Embedding(hint_vocab_size, d_model, padding_idx=input_pad_idx)
         nn.init.uniform_(self.char_emb.weight, -1, 1)
         nn.init.uniform_(self.diac_emb.weight, -1, 1)
+        self.pos_enc = ScaledSinusoidalEmbedding(d_model)
         self.dense = nn.Sequential(
             nn.Linear(d_model, 256),
             nn.Linear(256, 128),
             nn.Linear(128, d_model)
         )
-        self.pos_enc = ScaledSinusoidalEmbedding(d_model)
+        self.conv = nn.ModuleList([
+            ConvNorm(d_model, d_model, kernel_size=k, use_weight_norm=True)
+            for k in (1, 3, 5, 7)
+        ])
         self.attn_layers = nn.ModuleList([
-            ConformerBlock(d_model, ffm_dropout=0.2, attn_dropout=0.2, cgm_dropout=0.2)
-            for _ in range(12)
+            ConformerBlock(
+                d_model,
+                ffm_dropout=0.2,
+                attn_dropout=0.2,
+                cgm_dropout=0.3
+            )
+            for _ in range(3)
         ])
         self.res_layernorm = nn.LayerNorm(d_model)
         self.fc_out = nn.Linear(d_model, targ_vocab_size)
 
     def forward(self, char_inputs, diac_inputs, lengths):
-        length_mask = sequence_mask(lengths, char_inputs.size(1)).type_as(char_inputs)
+        length_mask = sequence_mask(
+            lengths, char_inputs.size(1)
+        ).type_as(char_inputs)
 
-        char_emb = self.char_emb(char_inputs)
-        diac_emb = self.diac_emb(diac_inputs)
+        char_emb = self.char_emb(char_inputs) * 16.00000
+        diac_emb = self.diac_emb(diac_inputs) * 32.000
         emb = self.dense(char_emb + diac_emb)
+        emb = emb.permute(0, 2, 1)
+        mask = length_mask.unsqueeze(1).float()
+        for conv in self.conv:
+            emb = conv(emb, mask=mask)
+        emb = emb.permute(0, 2, 1)
 
         pos_enc = self.pos_enc(emb)
-        attn_mask = length_mask.bool().logical_not_()
+        b, t, d = emb.size()
+        attn_mask = length_mask.bool().unsqueeze(1).unsqueeze(2)
+        attn_mask = attn_mask.expand(b, 1, t, t)
         x = emb
         for attn_layer in self.attn_layers:
             x = attn_layer(x, lengths, attn_mask, pos_enc)
 
         x = x + emb
         x = self.res_layernorm(x)
-
         x = self.fc_out(x)
         return x
 

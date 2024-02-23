@@ -42,6 +42,8 @@ def validate_diacritics(line):
 
 
 def segment_sentences(max_chars, line):
+    if len(line) <= max_chars:
+        return line.strip()
     return [line.strip() for line in _do_segment_sentences(line, max_chars)]
 
 
@@ -103,7 +105,7 @@ def process_corpus_arg_parser():
         "--output-dir", type=str, default="./data", help="Output directory."
     )
     parser.add_argument(
-        "--max-chars", type=int, default=400, help="max number of chars per sentence"
+        "--max-chars", type=int, default=600, help="max number of chars per sentence"
     )
     parser.add_argument(
         "--reset-dir",

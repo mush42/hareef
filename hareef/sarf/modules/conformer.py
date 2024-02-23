@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import einsum
 
-# from .attention import MultiheadAttention
+from .attention import MultiheadAttention
 from .hgru import HGRU
 
 
@@ -85,12 +85,12 @@ class AttentionModule(nn.Module):
     def __init__(self, dim, n_head=8, dropout=0.):
         super(AttentionModule, self).__init__()
         self.layernorm = nn.LayerNorm(dim)
-        self.attn = nn.MultiheadAttention(dim, n_head, dropout, batch_first=True)
+        self.attn = MultiheadAttention(dim, n_head, dropout)
 
     def forward(self, x, mask, pos_enc):
         x = self.layernorm(x)
         x = x + pos_enc
-        x, _ = self.attn(x, x, x, key_padding_mask=mask)
+        x, _ = self.attn(x, attention_mask=mask)
         return x
 
 
