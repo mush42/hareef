@@ -39,12 +39,17 @@ class DiacritizationDataset(Dataset):
         data = self.data[id]
         data = self.text_encoder.clean(data)
 
-        text, inputs, diacs = util.extract_haraqat(data)
-        inputs = torch.Tensor(self.text_encoder.input_to_sequence("".join(inputs)))
-        diacritics = torch.Tensor(self.text_encoder.target_to_sequence(diacs))
-        hints = self._generate_diac_hints(diacs)
+        text, char_inputs, diacs = util.extract_haraqat(data)
+        tokenized_text = "".join(char_inputs)
 
-        return inputs, hints, diacritics, text
+        inputs = torch.LongTensor(self.text_encoder.input_to_sequence(tokenized_text))
+        diacritics = torch.LongTensor(self.text_encoder.target_to_sequence(diacs))
+        hints = self._generate_diac_hints(diacs)
+        char2pos = torch.LongTensor([
+            t for (c, t) in self.text_encoder.chars_to_pos_tags(tokenized_text)
+        ])
+
+        return inputs, hints, diacritics, char2pos, text
 
     def _generate_diac_hints(self, diacs, no_hints=False):
         if no_hints:
@@ -83,67 +88,42 @@ def collate_fn(data, enforce_sorted=True):
         data.sort(key=lambda x: len(x[0]), reverse=True)
 
     # separate source and target sequences
-    src_seqs, hint_seqs, trg_seqs, original = zip(*data)
+    src_seqs, hint_seqs, trg_seqs, char2pos_seqs, original = zip(*data)
 
     # merge sequences (from tuple of 1D tensor to 2D tensor)
     src_seqs, src_lengths = merge(src_seqs)
     diac_seqs, __ = merge(hint_seqs)
     trg_seqs, trg_lengths = merge(trg_seqs, pad_idx=-100)
+    char2pos_seqs, ___ = merge(char2pos_seqs, pad_idx=-100)
 
     batch = {
         "original": original,
         "chars": src_seqs,
         "diacs": diac_seqs,
         "target": trg_seqs,
+        "char2pos": char2pos_seqs,
         "lengths": torch.LongTensor(src_lengths),  # src_lengths = trg_lengths
     }
     return batch
 
 
-def make_dataset_and_sampler(config, data_split, *, max_sents_per_class=None):
-    sampling_config = config["sampling_weights"]
-    paths = {
-        categ: os.path.join(config.data_dir, categ, f"{data_split}.txt")
-        for categ in sampling_config
-    }
-    diac_datasets = {}
-    for ident, path in paths.items():
-        with open(path, encoding="utf8") as file:
-            lines = file.readlines()
-            lines = [line for line in lines if len(line) <= config["max_len"]]
-        if max_sents_per_class:
-            lines = lines[:max_sents_per_class]
-        diac_datasets[ident] = DiacritizationDataset(config, [idx for idx in range(len(lines))], lines)
-
-    dataset_weight = [
-        (dataset, sampling_config[ident])
-        for ident, dataset in diac_datasets.items()
-    ]
-    datasets = [dw[0] for dw in dataset_weight]
-    weights = torch.concat([
-        torch.Tensor([dw[1] for i in range(len(dw[0]))])
-        for dw in dataset_weight
-    ])
-    dataset = ConcatDataset(datasets)
-    wr_sampler = WeightedRandomSampler(
-        weights, num_samples=len(dataset), replacement=False
-    )
-    return dataset, wr_sampler
+def make_dataset(config, data_split):
+    txt_path = os.path.join(config["data_directory"], data_split + ".txt")
+    with open(txt_path, encoding="utf8") as file:
+        lines = file.readlines()
+        lines = [line for line in lines if len(line) <= config["max_len"]]
+    diac_dataset =  DiacritizationDataset(config, [idx for idx in range(len(lines))], lines)
+    return diac_dataset
 
 
 def load_training_data(config, **loader_parameters):
-    dataset, sampler = make_dataset_and_sampler(
-        config,
-        "train",
-        max_sents_per_class=30000
-    )
+    dataset = make_dataset(config, "train")
     loader_parameters.setdefault("batch_size", config["batch_size"])
-    # loader_parameters.setdefault("shuffle", True)
+    loader_parameters.setdefault("shuffle", True)
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
     train_iterator = DataLoader(
         dataset,
         collate_fn=collate_fn,
-        sampler=sampler,
         **loader_parameters
     )
     _LOGGER.info(f"Length of training iterator = {len(train_iterator)}")
@@ -151,13 +131,12 @@ def load_training_data(config, **loader_parameters):
 
 
 def load_test_data(config, **loader_parameters):
-    dataset, sampler = make_dataset_and_sampler(config, "test")
+    dataset = make_dataset(config, "test")
     loader_parameters.setdefault("batch_size", config["batch_size"])
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
     test_iterator = DataLoader(
         dataset,
         collate_fn=collate_fn,
-        sampler=sampler,
         **loader_parameters
     )
     _LOGGER.info(f"Length of test iterator = {len(test_iterator)}")
@@ -165,14 +144,13 @@ def load_test_data(config, **loader_parameters):
 
 
 def load_validation_data(config, **loader_parameters):
-    dataset, sampler = make_dataset_and_sampler(config, "val")
+    dataset = make_dataset(config, "val")
 
     loader_parameters.setdefault("batch_size", config["batch_size"])
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
     valid_iterator = DataLoader(
         dataset,
         collate_fn=collate_fn,
-        sampler=sampler,
         **loader_parameters
     )
     _LOGGER.info(f"Length of valid iterator = {len(valid_iterator)}")

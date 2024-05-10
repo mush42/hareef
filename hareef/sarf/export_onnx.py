@@ -104,7 +104,7 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
         def _forward_pass(char_inputs, diac_inputs, lengths):
             char_inputs = char_inputs.unsqueeze(0)
             diac_inputs = diac_inputs.unsqueeze(0)
-            output = model._infer(char_inputs, diac_inputs, lengths)
+            output = model._infer(char_inputs, diac_inputs, lengths, _infer)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
             return (
@@ -118,7 +118,7 @@ def to_onnx(model, config, output_filename, opset=DEFAULT_OPSET_VERSION, fix_dim
         dynamic_axes = None
     else:
         def _forward_pass(char_inputs, diac_inputs, lengths):
-            output = model._infer(char_inputs, diac_inputs, lengths)
+            output, __ = model._infer(char_inputs, diac_inputs, lengths, train=False)
             logits = torch.softmax(output, dim=2)
             predictions = torch.argmax(logits, dim=2)
             return predictions.byte(), logits

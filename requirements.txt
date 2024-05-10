@@ -1,22 +1,26 @@
-# General
-lightning==2.0.3
-torch==2.0.1
-torchmetrics==1.0.1
-tensorboard==2.13.0
-numpy==1.24.3
-pandas==2.0.2
-matplotlib==3.7.1
-neural-compressor==2.2.1
-onnx==1.14.0
-onnxruntime==1.15.0
-onnxsim==0.4.33
-more_itertools==9.1.0
-diacritization-evaluation==0.5
-pysbd==0.3.4
-tqdm == 4.65.0
-x-transformers==1.23.1
+# ML frameworks
+lightning==2.2.4
+numpy==1.26.4
+torch==2.3.0
 
-# D3
-PyArabic==0.6.8
-fasttext==0.9.2
-opt_einsum==3.2.1
+# ML utilities
+neural_compressor==2.5.1
+onnx==1.16.0
+onnxruntime==1.17.3
+onnxsim==0.4.36
+opt-einsum==3.3.0
+torchmetrics==1.4.0
+tensorboard==2.16.2
+
+# Generic utilities
+attrs==23.2.0
+charset-normalizer==3.3.2
+more-itertools==10.2.0
+prettytable==3.10.0
+pysbd==0.3.4
+tqdm==4.66.4
+
+# Arabic NLP
+diacritization-evaluation==0.5
+farasapy==0.0.14
+PyArabic==0.6.15

@@ -2,11 +2,8 @@
   "session_name": "sarf.dev",
   "logs_root_directory": "logs/sarf",
   "data_directory": "data/sarf",
-  "sampling_weights": {
-    "MSA": 1.0
-  },
   "max_len": 400,
-  "d_model": 48,
+  "d_model": 64,
   "learning_rate": 1e-4,
   "batch_size": 16,
   "warmup_steps": 1000,

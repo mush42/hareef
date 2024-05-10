@@ -8,6 +8,7 @@ from concurrent.futures import ProcessPoolExecutor
 from functools import reduce, partial
 from pathlib import Path
 
+import pytqsm
 from diacritization_evaluation.util import extract_haraqat
 from more_itertools import collapse, windowed
 from tqdm import tqdm
@@ -127,6 +128,9 @@ def process_corpus_arg_parser():
         action="store_true",
         help="Validate lines an remove lines with invalid diacritics",
     )
+    parser.add_argument(
+        "--pre-segment", action="store_true", help="Pre segment sentences"
+    )
     parser.add_argument("--n-val", type=int, help="Number of validation sentences")
     parser.add_argument("--n-test", type=int, help="Number of test sentences")
     parser.add_argument(
@@ -185,6 +189,12 @@ def main(args, line_process_func=None):
         text = normalize_text(text)
 
     lines = text.splitlines()
+
+    if args.pre_segment:
+        line_sents = []
+        for line in lines:
+            line_sents.extend(pytqsm.segment("ar", line))
+        lines = line_sents
 
     if args.n_lines:
         _LOGGER.info(f"Sampling maximom of {args.n_lines} lines from the corpus")

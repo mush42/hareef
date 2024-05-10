@@ -26,10 +26,34 @@ from lightning.pytorch import LightningModule
 from .diacritizer import TorchDiacritizer
 from .dataset import load_validation_data, load_test_data
 from .modules.conformer import ConformerBlock, ScaledSinusoidalEmbedding
+from .modules.pos_encoder_backbone import POSEncoderBackbone
 
 
 
 _LOGGER = logging.getLogger(__package__)
+
+
+class POSEncoder(LightningModule):
+    def __init__(self, dim, num_pos_tags):
+        super().__init__()
+        self.backbone = POSEncoderBackbone(
+            input_channels=dim,
+            dim=dim * 2,
+            intermediate_dim=dim * 4,
+            num_layers=6,
+        )
+        self.act = nn.GLU()
+        self.fc_out = nn.Linear(dim, num_pos_tags)
+
+    def forward(self, x, train=True):
+        x = x.permute(0, -1, 1)
+        x = self.backbone(x)
+        x = self.act(x)
+        logits = None
+        if train:
+            logits = self.fc_out(x)
+        return x, logits
+
 
 class ConvNorm(nn.Module):
     """A 1-dimensional convolutional layer with optional weight normalization.
@@ -110,6 +134,7 @@ class SarfModel(LightningModule):
             "inp_vocab_size": config.len_input_symbols,
             "hint_vocab_size": config.len_hint_symbols,
             "targ_vocab_size": config.len_target_symbols,
+            "num_pos_tags": config.text_encoder.num_pos_tags,
             "input_pad_idx": config.text_encoder.input_pad_id,
             "target_pad_idx": config.text_encoder.target_pad_id,
             **config.config,
@@ -123,11 +148,13 @@ class SarfModel(LightningModule):
         self.test_step_outputs = {}
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=-100)
+        self.pos_criterion = nn.CrossEntropyLoss(ignore_index=-100)
         self._build_layers(
             d_model=self.hparams.d_model,
             inp_vocab_size=self.hparams.inp_vocab_size,
             hint_vocab_size=self.hparams.hint_vocab_size,
             targ_vocab_size=self.hparams.targ_vocab_size,
+            num_pos_tags=self.hparams.num_pos_tags,
             input_pad_idx=self.hparams.input_pad_idx,
         )
 
@@ -137,6 +164,7 @@ class SarfModel(LightningModule):
         inp_vocab_size,
         hint_vocab_size,
         targ_vocab_size,
+        num_pos_tags,
         input_pad_idx,
     ):
         self.char_emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=input_pad_idx)
@@ -149,10 +177,6 @@ class SarfModel(LightningModule):
             nn.Linear(256, 128),
             nn.Linear(128, d_model)
         )
-        self.conv = nn.ModuleList([
-            ConvNorm(d_model, d_model, kernel_size=k, use_weight_norm=True)
-            for k in (1, 3, 5, 7)
-        ])
         self.attn_layers = nn.ModuleList([
             ConformerBlock(
                 d_model,
@@ -162,10 +186,18 @@ class SarfModel(LightningModule):
             )
             for _ in range(3)
         ])
+        pos_encoder_dim = 64
+        output_dim = d_model + pos_encoder_dim
+        self.pos_encoder = POSEncoder(pos_encoder_dim, num_pos_tags)
+        self.conv = nn.ModuleList([
+            ConvNorm(output_dim, output_dim, kernel_size=k, use_weight_norm=True)
+            for k in (1, 3, 5, 7)
+        ])
+        self.act = nn.GLU()
         self.res_layernorm = nn.LayerNorm(d_model)
         self.fc_out = nn.Linear(d_model, targ_vocab_size)
 
-    def forward(self, char_inputs, diac_inputs, lengths):
+    def forward(self, char_inputs, diac_inputs, lengths, train=True):
         length_mask = sequence_mask(
             lengths, char_inputs.size(1)
         ).type_as(char_inputs)
@@ -173,27 +205,31 @@ class SarfModel(LightningModule):
         char_emb = self.char_emb(char_inputs) * 16.00000
         diac_emb = self.diac_emb(diac_inputs) * 32.000
         emb = self.dense(char_emb + diac_emb)
-        emb = emb.permute(0, 2, 1)
-        mask = length_mask.unsqueeze(1).float()
-        for conv in self.conv:
-            emb = conv(emb, mask=mask)
-        emb = emb.permute(0, 2, 1)
 
         pos_enc = self.pos_enc(emb)
         b, t, d = emb.size()
         attn_mask = length_mask.bool().unsqueeze(1).unsqueeze(2)
         attn_mask = attn_mask.expand(b, 1, t, t)
-        x = emb
+        attn_out = emb
         for attn_layer in self.attn_layers:
-            x = attn_layer(x, lengths, attn_mask, pos_enc)
+            attn_out = attn_layer(attn_out, lengths, attn_mask, pos_enc)
 
-        x = x + emb
+        pos_emb, pos_logits = self.pos_encoder(attn_out)
+        x = torch.concat([attn_out, pos_emb], dim=-1)
+        mask = length_mask.unsqueeze(1).float()
+        x = x.permute(0, 2, 1)
+        for conv in self.conv:
+            x = conv(x, mask=mask)
+        x = x.permute(0, 2, 1)
+        x = self.act(x)
+
+        x = x + attn_out
         x = self.res_layernorm(x)
         x = self.fc_out(x)
-        return x
+        return x, pos_logits
 
     def predict(self, char_inputs, diac_inputs, lengths):
-        output = self(char_inputs, diac_inputs, lengths)
+        output, __ = self(char_inputs, diac_inputs, lengths, train=False)
         logits = output.softmax(dim=2)
         predictions = torch.argmax(logits, dim=2)
         return predictions.byte(), logits
@@ -275,18 +311,24 @@ class SarfModel(LightningModule):
             values.clear()
 
     def _process_batch(self, batch):
-        predictions = self(
+        predictions, pos_predictions = self(
             batch["chars"].to(self.device),
             batch["diacs"].to(self.device),
             batch["lengths"].to("cpu")
         )
         target = batch["target"].contiguous()
+        pos_target = batch["char2pos"].contiguous()
 
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = batch["target"].view(-1)
+        pos_predictions = pos_predictions.view(-1, pos_predictions.shape[-1])
+        pos_targets = pos_target.view(-1)
 
         diac_loss = self.criterion(
             predictions.to(self.device), targets.to(self.device)
+        )
+        pos_loss = self.pos_criterion(
+            pos_predictions.to(self.device), pos_targets.to(self.device)
         )
         diac_accuracy = categorical_accuracy(
             predictions.to(self.device),
@@ -294,10 +336,20 @@ class SarfModel(LightningModule):
             -100,
             device=self.device,
         )
+        pos_accuracy = categorical_accuracy(
+            pos_predictions.to(self.device),
+            pos_targets.to(self.device),
+            -100,
+            device=self.device,
+        )
 
+        loss = (2.0 * pos_loss) + (8.0 * diac_loss)
         return {
-            "loss": diac_loss,
-            "accuracy": diac_accuracy,
+            "loss": loss,
+            "diac_loss": diac_loss,
+            "pos_loss": pos_loss,
+            "diac_accuracy": diac_accuracy,
+            "pos_accuracy": pos_accuracy,
         }
 
     @classmethod

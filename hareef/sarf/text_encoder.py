@@ -2,11 +2,12 @@
 
 import dataclasses
 import typing
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from functools import cached_property
 from itertools import chain
 from typing import Any, Optional
 
+from farasa.pos import FarasaPOSTagger
 from hareef.text_cleaners import valid_vocab_char_cleaner
 from hareef.constants import (
     ArabicDiacritics,
@@ -36,6 +37,47 @@ NUMERAL_TRANSLATION_TABLE = str.maketrans(
     "".join(NUMERAL_CHARS),
     NUM * len(NUMERAL_CHARS)
 )
+
+FARASA_POS_TAGS = [
+    "ABBREV",
+    "ADJ",
+    "ADJ/F/P",
+    "ADJ/F/S",
+    "ADJ/M/P",
+    "ADJ/M/S",
+    "ADV",
+    "CASE",
+    "CONJ",
+    "DET",
+    "FOREIGN",
+    "FUT_PART",
+    "NOUN",
+    "NOUN+PART",
+    "NOUN/F/P",
+    "NOUN/F/S",
+    "NOUN/M/D",
+    "NOUN/M/P",
+    "NOUN/M/S",
+    "NSUFF",
+    "NSUFF/F/D",
+    "NSUFF/F/P",
+    "NSUFF/F/S",
+    "NSUFF/M/D",
+    "NSUFF/M/P",
+    "NSUFF/M/S",
+    "NUM",
+    "NUM/M/D",
+    "NUM/M/P",
+    "NUM/M/S",
+    "PART",
+    "PART+PART",
+    "PREP",
+    "PREP+PART",
+    "PRON",
+    "PUNC",
+    "V",
+    "V+PART"
+]
 
 
 @dataclasses.dataclass
@@ -67,6 +109,10 @@ class TextEncoder:
 
     def __init__(self, config: TokenConfig = None):
         self.config = TokenConfig.default() if config is None else config
+
+        self.pos_tagger = FarasaPOSTagger(interactive=True)
+        self.pos_tag_ids = {p: i for (i, p) in enumerate(FARASA_POS_TAGS)}
+        self.num_pos_tags = len(self.pos_tag_ids)
 
         self.input_symbols: list[str] = self.config.input_tokens
         self.hint_symbols: list[str] = self.config.hint_tokens
@@ -171,6 +217,42 @@ class TextEncoder:
         for (idx, symbol) in self.target_id_to_symbol.items():
             ret[idx] = DIACRITIC_LABELS.get(symbol, symbol)
         return OrderedDict(sorted(ret.items()))
+
+    def chars_to_pos_tags(self, sent, ignore_index=-100):
+        c2t = []
+        tags = [
+            item.as_tuple()
+            for item in self.pos_tagger.tag_segments(sent, combine_subtokens=False)
+        ]
+        l2t = deque()
+        for (word, tags) in tags:
+            tag_ident = self._make_tag_ident(tags)
+            l2t.extend([
+                (c, tag_ident)
+                for c in word
+                if c in ARABIC_LETTERS
+            ])
+        arabic_chars = [c for c in sent if c in ARABIC_LETTERS]
+        if len(arabic_chars) != len(l2t):
+            return list(zip(
+                sent,
+                [ignore_index] * len(sent)
+            ))
+        for c in sent:
+            if c in ARABIC_LETTERS:
+                __, tag = l2t.popleft()
+                tag_id = self.pos_tag_ids[tag]
+                c2t.append((c, tag_id))
+            else:
+                c2t.append((c, ignore_index))
+        return c2t
+
+    def _make_tag_ident(self, tags):
+        (t, *ts) = tags[0]
+        tag = [t]
+        if ts:
+            tag.extend(ts[0])
+        return "/".join(tag)
 
     def dump_tokens(self) -> dict[Any, Any]:
         data = {
