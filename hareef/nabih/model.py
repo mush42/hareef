@@ -12,21 +12,17 @@ from typing import Optional, Tuple
 import more_itertools
 import numpy as np
 import torch
+from diacritization_evaluation.util import extract_haraqat
+from lightning.pytorch import LightningModule
 from torch import nn, optim
 from tqdm import tqdm
-from diacritization_evaluation.util import extract_haraqat
-from hareef.utils import (
-    sequence_mask,
-    calculate_error_rates,
-    format_error_rates_as_table,
-    categorical_accuracy,
-)
-from lightning.pytorch import LightningModule
 
+from hareef.utils import (calculate_error_rates, categorical_accuracy,
+                          format_error_rates_as_table, sequence_mask)
+
+from .dataset import load_test_data, load_validation_data
 from .diacritizer import TorchDiacritizer
-from .dataset import load_validation_data, load_test_data
-from .modules.x_transformers import TransformerWrapper, Encoder
-
+from .modules.x_transformers import Encoder, TransformerWrapper
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -63,11 +59,11 @@ class NabihModel(LightningModule):
         max_len,
     ):
         self.transformer = TransformerWrapper(
-            num_tokens = inp_vocab_size,
-            max_seq_len = max_len,
+            num_tokens=inp_vocab_size,
+            max_seq_len=max_len,
             post_emb_norm=True,
             attn_layers=Encoder(
-                dim = embedding_dim,
+                dim=embedding_dim,
                 depth=num_layers,
                 heads=num_heads,
                 layer_dropout=0.2,
@@ -80,7 +76,7 @@ class NabihModel(LightningModule):
                 use_simple_rmsnorm=True,
                 attn_gate_values=True,
                 onnxable=True,
-            )
+            ),
         )
         self.fc_out = nn.Linear(inp_vocab_size, targ_vocab_size)
 
@@ -132,10 +128,14 @@ class NabihModel(LightningModule):
             factor=self.config["lr_factor"],
             patience=self.config["lr_patience"],
             min_lr=self.config["min_lr"],
-            mode='min',
+            mode="min",
             cooldown=1,
         )
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
 
     def on_train_epoch_end(self):
         self._log_epoch_metrics(self.training_step_outputs)
@@ -153,10 +153,9 @@ class NabihModel(LightningModule):
                 num_batches=self.config["error_rates_n_batches"],
                 predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
             )
-            self.log_dict({
-                k.replace("*", "_star"): v
-                for (k, v) in error_rates.items()
-            })
+            self.log_dict(
+                {k.replace("*", "_star"): v for (k, v) in error_rates.items()}
+            )
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
     def on_test_epoch_end(self) -> None:
@@ -184,9 +183,7 @@ class NabihModel(LightningModule):
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = batch["target"].view(-1)
 
-        diac_loss = self.criterion(
-            predictions.to(self.device), targets.to(self.device)
-        )
+        diac_loss = self.criterion(predictions.to(self.device), targets.to(self.device))
         diac_accuracy = categorical_accuracy(
             predictions.to(self.device),
             targets.to(self.device),

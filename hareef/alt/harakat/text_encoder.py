@@ -7,19 +7,11 @@ from functools import cached_property
 from itertools import chain
 from typing import Any, Optional
 
+from hareef.constants import (ALL_VALID_DIACRITICS, ARABIC_LETTERS,
+                              ARABIC_VOWELS, DIACRITIC_CHARS, DIACRITIC_LABELS,
+                              PUNCTUATIONS, WORD_DELIMITERS, WORD_SEPARATOR,
+                              ArabicDiacritics)
 from hareef.text_cleaners import valid_arabic_cleaner
-from hareef.constants import (
-    DIACRITIC_CHARS,
-    ALL_VALID_DIACRITICS,
-    ARABIC_LETTERS,
-    PUNCTUATIONS,
-    WORD_SEPARATOR,
-    DIACRITIC_LABELS,
-    WORD_DELIMITERS,
-    ARABIC_VOWELS,
-    ArabicDiacritics,
-)
-
 
 PAD = "_"
 SOS = "^"
@@ -92,7 +84,11 @@ class TextEncoder:
         self.input_eos_id = self.input_symbol_to_id[self.eos]
         self.target_eos_id = self.target_symbol_to_id[self.eos]
 
-        self.meta_tokens = {self.pad, self.sos, self.eos,}
+        self.meta_tokens = {
+            self.pad,
+            self.sos,
+            self.eos,
+        }
 
         self.meta_input_token_ids = {
             self.input_pad_id,
@@ -159,7 +155,6 @@ class TextEncoder:
                 self.sequence_to_input(input_ids), self.sequence_to_target(output_ids)
             )
         )
-            
 
     @cached_property
     def target_id_to_label(self):

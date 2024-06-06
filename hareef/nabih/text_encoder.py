@@ -7,15 +7,9 @@ from functools import cached_property
 from itertools import chain
 from typing import Any, Optional
 
+from hareef.constants import (ALL_VALID_DIACRITICS, ARABIC_LETTERS,
+                              DIACRITIC_LABELS, PUNCTUATIONS, WORD_SEPARATOR)
 from hareef.text_cleaners import valid_arabic_cleaner
-from hareef.constants import (
-    ALL_VALID_DIACRITICS,
-    ARABIC_LETTERS,
-    PUNCTUATIONS,
-    WORD_SEPARATOR,
-    DIACRITIC_LABELS,
-)
-
 
 PAD = "_"
 SOS = "^"
@@ -39,8 +33,12 @@ class TokenConfig:
     target_tokens: list[str]
 
     def __post_init__(self):
-        self.input_id_map: OrderedDict[str, int] = OrderedDict((char, idx) for idx, char in enumerate(self.input_tokens))
-        self.target_id_map: OrderedDict[str, int] = OrderedDict((char, idx) for idx, char in enumerate(self.target_tokens))
+        self.input_id_map: OrderedDict[str, int] = OrderedDict(
+            (char, idx) for idx, char in enumerate(self.input_tokens)
+        )
+        self.target_id_map: OrderedDict[str, int] = OrderedDict(
+            (char, idx) for idx, char in enumerate(self.target_tokens)
+        )
 
     @classmethod
     def default(cls):
@@ -49,7 +47,7 @@ class TokenConfig:
             sos=SOS,
             eos=EOS,
             input_tokens=INPUT_TOKENS,
-            target_tokens=TARGET_TOKENS
+            target_tokens=TARGET_TOKENS,
         )
 
 
@@ -136,11 +134,11 @@ class TextEncoder:
                 self.sequence_to_input(input_ids), self.sequence_to_target(output_ids)
             )
         )
-    
+
     @cached_property
     def target_id_to_label(self):
         ret = {}
-        for (idx, symbol) in self.target_id_to_symbol.items():
+        for idx, symbol in self.target_id_to_symbol.items():
             ret[idx] = DIACRITIC_LABELS.get(symbol, symbol)
         return OrderedDict(sorted(ret.items()))
 

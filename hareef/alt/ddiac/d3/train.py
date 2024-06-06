@@ -10,13 +10,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint
 from lightning import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
+from hareef.utils import find_last_checkpoint
+
 from ..config import Config
-from ..dataset import load_training_data, load_val_data, load_test_data
+from ..dataset import load_test_data, load_training_data, load_val_data
 from .model import DiacritizerD3
 
 _LOGGER = logging.getLogger("hareef.cbhg.train")
@@ -44,7 +45,9 @@ def main():
         "--debug", action="store_true", help="Use fast dev mode of lightning"
     )
     parser.add_argument(
-        '--from-scratch', action="store_true", help="Train D3 without requireing  a pretrained D2 checkpoint."
+        "--from-scratch",
+        action="store_true",
+        help="Train D3 without requireing  a pretrained D2 checkpoint.",
     )
 
     args = parser.parse_args()
@@ -69,7 +72,11 @@ def main():
     stopping_delta = config["train"]["stopping-delta"]
     stopping_patience = config["train"]["stopping-patience"]
     loss_early_stop_callback = EarlyStopping(
-        monitor="val_loss", min_delta=stopping_delta, patience=stopping_patience, mode="min", strict=True
+        monitor="val_loss",
+        min_delta=stopping_delta,
+        patience=stopping_patience,
+        mode="min",
+        strict=True,
     )
     plugins = []
     if config["train"]["mixed-precision"]:
@@ -122,7 +129,7 @@ def main():
         trainer.test(model, test_loader)
     else:
         if not os.path.isfile(config["paths"]["d2-checkpoint"] or ""):
-            if  args.from_scratch:
+            if args.from_scratch:
                 _LOGGER.warn(
                     "You passed `--from_scratch` when starting D3 training.\n"
                     "This is not recommended\n"
@@ -135,7 +142,9 @@ def main():
                     "or pass `--from-scratch` to train the model from scratch"
                 )
         else:
-            pretrained_dict = torch.load(config["paths"]["d2-checkpoint"], map_location=T.device(model.device))["state_dict"]
+            pretrained_dict = torch.load(
+                config["paths"]["d2-checkpoint"], map_location=T.device(model.device)
+            )["state_dict"]
             model_state_dict = model.state_dict()
             for i, (name, params) in enumerate(pretrained_dict.items()):
                 if name in model_state_dict and i < 41:
@@ -144,17 +153,15 @@ def main():
             if config["train"]["freeze-base"]:
                 _LOGGER.info("> Freezing Model parameters...")
                 for params in model.parameters():
-                    params.requires_grad = False 
+                    params.requires_grad = False
                 for params in model.lstm_decoder.parameters():
-                    params.requires_grad = True 
+                    params.requires_grad = True
                 for params in model.classifier.parameters():
-                    params.requires_grad = True 
+                    params.requires_grad = True
         train_loader, val_loader = load_training_data(config), load_val_data(config)
         inference_config_path = logs_root_directory.joinpath("inference-config.json")
         with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
-            json.dump(
-                "\n", file, ensure_ascii=False, indent=2
-            )
+            json.dump("\n", file, ensure_ascii=False, indent=2)
         _LOGGER.info(f"Writing inference config to file: `{inference_config_path}`")
         _LOGGER.info("Training loop starting...")
         trainer.fit(model, train_loader, val_loader)

@@ -1,5 +1,6 @@
 # coding: utf-8
 
+
 class LinearSchedule:
     def __init__(self, schedule_timesteps, final_p, initial_p=1.0):
         """Linear interpolation between initial_p and final_p over
@@ -23,4 +24,3 @@ class LinearSchedule:
         """See Schedule.value"""
         fraction = min(float(t) / self.schedule_timesteps, 1.0)
         return self.initial_p + fraction * (self.final_p - self.initial_p)
-

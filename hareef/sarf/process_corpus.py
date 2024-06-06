@@ -5,7 +5,6 @@ import sys
 
 from ..process_corpus import main as proc_main
 from ..process_corpus import process_corpus_arg_parser
-
 from .config import Config
 from .text_encoder import NUMERAL_TRANSLATION_TABLE
 
@@ -24,8 +23,7 @@ def main():
     args.max_chars = config.config["max_len"] - 2
 
     proc_main(
-        args,
-        line_process_func=lambda line: line.translate(NUMERAL_TRANSLATION_TABLE)
+        args, line_process_func=lambda line: line.translate(NUMERAL_TRANSLATION_TABLE)
     )
 
 

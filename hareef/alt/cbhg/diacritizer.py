@@ -6,6 +6,7 @@ from typing import Dict
 import numpy as np
 import onnxruntime
 import torch
+
 from hareef.text_cleaners import diacritics_cleaner, valid_arabic_cleaner
 
 

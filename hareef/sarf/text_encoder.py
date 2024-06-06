@@ -8,18 +8,11 @@ from itertools import chain
 from typing import Any, Optional
 
 from farasa.pos import FarasaPOSTagger
-from hareef.text_cleaners import valid_vocab_char_cleaner
-from hareef.constants import (
-    ArabicDiacritics,
-    ALL_VALID_DIACRITICS,
-    ARABIC_LETTERS,
-    DIACRITIC_CHARS,
-    DIACRITIC_LABELS,
-    NUMERAL_CHARS,
-    PUNCTUATIONS,
-    WORD_SEPARATOR,
-)
 
+from hareef.constants import (ALL_VALID_DIACRITICS, ARABIC_LETTERS,
+                              DIACRITIC_CHARS, DIACRITIC_LABELS, NUMERAL_CHARS,
+                              PUNCTUATIONS, WORD_SEPARATOR, ArabicDiacritics)
+from hareef.text_cleaners import valid_vocab_char_cleaner
 
 PAD = "_"
 NUM = "#"
@@ -32,10 +25,9 @@ INPUT_TOKENS = [
 TARGET_TOKENS = [PAD, *sorted(ALL_VALID_DIACRITICS)]
 HINT_TOKENS = [*TARGET_TOKENS, ArabicDiacritics.SHADDA.value]
 
-MODEL_VOCAB = frozenset(set(INPUT_TOKENS) | set(DIACRITIC_CHARS)) 
+MODEL_VOCAB = frozenset(set(INPUT_TOKENS) | set(DIACRITIC_CHARS))
 NUMERAL_TRANSLATION_TABLE = str.maketrans(
-    "".join(NUMERAL_CHARS),
-    NUM * len(NUMERAL_CHARS)
+    "".join(NUMERAL_CHARS), NUM * len(NUMERAL_CHARS)
 )
 
 FARASA_POS_TAGS = [
@@ -66,6 +58,9 @@ FARASA_POS_TAGS = [
     "NSUFF/M/P",
     "NSUFF/M/S",
     "NUM",
+    "NUM/F/D",
+    "NUM/F/P",
+    "NUM/F/S",
     "NUM/M/D",
     "NUM/M/P",
     "NUM/M/S",
@@ -76,7 +71,7 @@ FARASA_POS_TAGS = [
     "PRON",
     "PUNC",
     "V",
-    "V+PART"
+    "V+PART",
 ]
 
 
@@ -89,9 +84,15 @@ class TokenConfig:
     target_tokens: list[str]
 
     def __post_init__(self):
-        self.input_id_map: OrderedDict[str, int] = OrderedDict((char, idx) for idx, char in enumerate(self.input_tokens))
-        self.hint_id_map: OrderedDict[str, int] = OrderedDict((char, idx) for idx, char in enumerate(self.hint_tokens))
-        self.target_id_map: OrderedDict[str, int] = OrderedDict((char, idx) for idx, char in enumerate(self.target_tokens))
+        self.input_id_map: OrderedDict[str, int] = OrderedDict(
+            (char, idx) for idx, char in enumerate(self.input_tokens)
+        )
+        self.hint_id_map: OrderedDict[str, int] = OrderedDict(
+            (char, idx) for idx, char in enumerate(self.hint_tokens)
+        )
+        self.target_id_map: OrderedDict[str, int] = OrderedDict(
+            (char, idx) for idx, char in enumerate(self.target_tokens)
+        )
 
     @classmethod
     def default(cls):
@@ -163,10 +164,7 @@ class TextEncoder:
         return seq
 
     def target_to_sequence(self, diacritics: str) -> list[int]:
-        seq = [
-            self.target_symbol_to_id.get(s, self.no_diac_id)
-            for s in diacritics
-        ]
+        seq = [self.target_symbol_to_id.get(s, self.no_diac_id) for s in diacritics]
         return seq
 
     def sequence_to_input(self, sequence: list[int]):
@@ -210,11 +208,11 @@ class TextEncoder:
                 self.sequence_to_input(input_ids), self.sequence_to_target(output_ids)
             )
         )
-    
+
     @cached_property
     def target_id_to_label(self):
         ret = {}
-        for (idx, symbol) in self.target_id_to_symbol.items():
+        for idx, symbol in self.target_id_to_symbol.items():
             ret[idx] = DIACRITIC_LABELS.get(symbol, symbol)
         return OrderedDict(sorted(ret.items()))
 
@@ -225,22 +223,18 @@ class TextEncoder:
             for item in self.pos_tagger.tag_segments(sent, combine_subtokens=False)
         ]
         l2t = deque()
-        for (word, tags) in tags:
+        for word, tags in tags:
             tag_ident = self._make_tag_ident(tags)
-            l2t.extend([
-                (c, tag_ident)
-                for c in word
-                if c in ARABIC_LETTERS
-            ])
+            l2t.extend([(c, tag_ident) for c in word if c in ARABIC_LETTERS])
         arabic_chars = [c for c in sent if c in ARABIC_LETTERS]
         if len(arabic_chars) != len(l2t):
-            return list(zip(
-                sent,
-                [ignore_index] * len(sent)
-            ))
+            return list(zip(sent, [ignore_index] * len(sent)))
         for c in sent:
             if c in ARABIC_LETTERS:
-                __, tag = l2t.popleft()
+                try:
+                    __, tag = l2t.popleft()
+                except KeyError:
+                    c2t.append((c, ignore_index))
                 tag_id = self.pos_tag_ids[tag]
                 c2t.append((c, tag_id))
             else:

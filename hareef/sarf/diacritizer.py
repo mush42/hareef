@@ -12,7 +12,6 @@ from tqdm import tqdm
 
 from .dataset import load_inference_data
 
-
 # Sentinel
 _missing = object()
 
@@ -25,13 +24,17 @@ class Diacritizer:
         self.text_encoder = self.config.text_encoder
         self.input_pad_id = self.text_encoder.input_pad_id
 
-    def diacritize_text(self, sentences: list[str], *, full_hints=True, batch_size=_missing):
+    def diacritize_text(
+        self, sentences: list[str], *, full_hints=True, batch_size=_missing
+    ):
         if batch_size is _missing:
             batch_size = self.config["batch_size"]
         elif not batch_size:
             batch_size = len(sentences)
 
-        infer_loader = load_inference_data(self.config, sentences, batch_size=batch_size)
+        infer_loader = load_inference_data(
+            self.config, sentences, batch_size=batch_size
+        )
 
         if len(infer_loader) == 1:
             for batch in infer_loader:
@@ -57,12 +60,14 @@ class Diacritizer:
         diac_hints = diac_hints.cpu().numpy()
         input_lengths = batch["lengths"].cpu().numpy()
         start_time = time.perf_counter()
-        predictions, logits = self.diacritize_batch(char_inputs, diac_hints, input_lengths)
+        predictions, logits = self.diacritize_batch(
+            char_inputs, diac_hints, input_lengths
+        )
         infer_time_ms = (time.perf_counter() - start_time) * 1000
 
         sentences = []
         for length, src, prediction in zip(input_lengths, char_inputs, predictions):
-            src = src[:length + 2]
+            src = src[: length + 2]
             prediction = prediction[:length]
             sentence = self.text_encoder.combine_text_and_diacritics(
                 list(src), list(prediction)
@@ -92,7 +97,7 @@ class TorchDiacritizer(Diacritizer):
             raise RuntimeError("Called `diacritize_batch` without setting the `model`")
         char_inputs = torch.LongTensor(char_inputs).to(self.device)
         diac_inputs = torch.LongTensor(diac_inputs).to(self.device)
-        input_lengths = torch.LongTensor(input_lengths).to('cpu')
+        input_lengths = torch.LongTensor(input_lengths).to("cpu")
         indices, logits = self.model.predict(char_inputs, diac_inputs, input_lengths)
         return (
             indices.detach().cpu().numpy(),

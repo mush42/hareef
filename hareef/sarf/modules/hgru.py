@@ -33,5 +33,3 @@ class HGRU(nn.Module):
         if self.sum_bidi and self.bidirectional:
             output = output[:, :, : self.hidden_size] + output[:, :, self.hidden_size :]
         return output.tanh()
-
-

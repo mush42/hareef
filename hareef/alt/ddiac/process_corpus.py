@@ -5,11 +5,13 @@ import logging
 import os
 from pathlib import Path
 
-from hareef.process_corpus import main as proc_main, process_corpus_arg_parser, validate_diacritics
-
 import fasttext as ft
+from pyarabic.araby import strip_tashkeel, tokenize
 from tqdm import tqdm
-from pyarabic.araby import tokenize, strip_tashkeel
+
+from hareef.process_corpus import main as proc_main
+from hareef.process_corpus import (process_corpus_arg_parser,
+                                   validate_diacritics)
 
 from .config import Config
 
@@ -17,9 +19,10 @@ _LOGGER = logging.getLogger("hareef.process_corpus")
 
 
 def export(path, text):
-    with open(path, 'w', encoding="utf-8") as fout:
-        fout.write('\n'.join(text))
-    
+    with open(path, "w", encoding="utf-8") as fout:
+        fout.write("\n".join(text))
+
+
 def segment(lines, stride, window_sz, min_window_sz):
     segments, mapping = [], []
     real_seg_idx = 0
@@ -27,18 +30,22 @@ def segment(lines, stride, window_sz, min_window_sz):
     for sent_idx, line in tqdm(enumerate(lines), total=len(lines)):
         line = line.strip()
         tokens = tokenize(line)
-        if len(tokens) == 0: continue
-        if tokens[-1] == '\n': tokens = tokens[:-1]
+        if len(tokens) == 0:
+            continue
+        if tokens[-1] == "\n":
+            tokens = tokens[:-1]
         seg_idx, idx = 0, 0
         while idx < len(tokens):
-            window = tokens[idx:idx+window_sz]
-            if window_sz == -1: window = tokens  
-            if len(window) < min_window_sz and seg_idx != 0: break
+            window = tokens[idx : idx + window_sz]
+            if window_sz == -1:
+                window = tokens
+            if len(window) < min_window_sz and seg_idx != 0:
+                break
 
-            segment = ' '.join(window)
+            segment = " ".join(window)
             segments += [segment]
-            char_offset = len(strip_tashkeel(' '.join(tokens[:idx])))
-    
+            char_offset = len(strip_tashkeel(" ".join(tokens[:idx])))
+
             if seg_idx > 0:
                 char_offset += 1
 
@@ -47,58 +54,62 @@ def segment(lines, stride, window_sz, min_window_sz):
             j = 0
             for st_idx, st in enumerate(seg_tokens):
                 for _ in range(len(st)):
-                    mapping += [(sent_idx, real_seg_idx, st_idx, j+char_offset)]
+                    mapping += [(sent_idx, real_seg_idx, st_idx, j + char_offset)]
                     j += 1
                 j += 1
 
             real_seg_idx += 1
             seg_idx += 1
 
-            if stride == -1: break
+            if stride == -1:
+                break
 
-            idx += (window_sz if stride >= window_sz else stride)
-          
+            idx += window_sz if stride >= window_sz else stride
+
     return segments, mapping
 
 
 def extract_vocab(f_name):
     vocab = set()
-    with open(f_name, 'r', encoding="utf-8") as fin:
+    with open(f_name, "r", encoding="utf-8") as fin:
         lines = fin.readlines()
     for line in tqdm(lines):
-        vocab.update(
-            strip_tashkeel(t)
-            for t in tokenize(line)
-        )
+        vocab.update(strip_tashkeel(t) for t in tokenize(line))
     return vocab
 
 
 def read_vocab(fn):
-    with open(fn, encoding='utf-8') as fin:
+    with open(fn, encoding="utf-8") as fin:
         vv = [w.strip() for w in tqdm(fin) if w.strip()]
     return vv
 
+
 def embed_vocab(ff, vv):
-    return [
-        ff.get_word_vector(w)
-        for w in tqdm(vv)
-    ]
+    return [ff.get_word_vector(w) for w in tqdm(vv)]
+
 
 def vround(val):
     return str(round(val, 4))
 
+
 def render(word, feats):
-    ff = ' '.join(map(vround, feats))
-    return f'{word} {ff}\n'
+    ff = " ".join(map(vround, feats))
+    return f"{word} {ff}\n"
 
 
 def main():
     logging.basicConfig(level=logging.DEBUG)
 
     parser = process_corpus_arg_parser()
-    parser.add_argument('--config',  type=str, required=True, help='Model config')
-    parser.add_argument('--segment',  type=str, choices=['train', 'test'], default='train', help='Model config')
-    parser.add_argument('--ft-model',  type=str, required=True, help='Fast text binary')
+    parser.add_argument("--config", type=str, required=True, help="Model config")
+    parser.add_argument(
+        "--segment",
+        type=str,
+        choices=["train", "test"],
+        default="train",
+        help="Model config",
+    )
+    parser.add_argument("--ft-model", type=str, required=True, help="Fast text binary")
 
     args = parser.parse_args()
 
@@ -119,8 +130,8 @@ def main():
     v_test = extract_vocab(os.path.join(base, "dataset", "test.txt"))
     vocab = v_train.union(v_val).union(v_test)
     vocab_filepath = os.path.join(base, "vocab.txt")
-    with open(vocab_filepath, 'w', encoding="utf-8") as fout:
-        fout.write('\n'.join(vocab))
+    with open(vocab_filepath, "w", encoding="utf-8") as fout:
+        fout.write("\n".join(vocab))
     _LOGGER.info(f"Wrote vocab to file: {vocab_filepath}")
 
     # Word embedding
@@ -134,17 +145,14 @@ def main():
     del ember
 
     save_path = config["paths"]["word-embs"]
-    with open(save_path, 'w', encoding="utf-8") as fout:
-        fout.write(f'{len(vocab)} {ember_length}\n')
-        fout.writelines(
-            render(word, feats)
-            for word, feats in zip(tqdm(words), vocab)
-        )
+    with open(save_path, "w", encoding="utf-8") as fout:
+        fout.write(f"{len(vocab)} {ember_length}\n")
+        fout.writelines(render(word, feats) for word, feats in zip(tqdm(words), vocab))
     _LOGGER.info(f"Saved word embedding to file: {save_path}")
 
     # Segmentation
     _LOGGER.info("Segmenting corpus using sliding window...")
-    if args.segment == 'train':
+    if args.segment == "train":
         seg_config = config["segment"]["train"]
         _LOGGER.info("Using segment config for training")
     else:
@@ -160,23 +168,20 @@ def main():
         file_path = os.path.join(base, "dataset", fpath)
         _LOGGER.info(f"Processing file: {file_path}")
         save_path = os.path.join(base, fpath[:-4] + f"-{stride}-{window}.txt")
-        map_path  = os.path.join(base, fpath[:-4] + f"-{stride}-{window}.map")
+        map_path = os.path.join(base, fpath[:-4] + f"-{stride}-{window}.map")
 
-        with open(file_path, 'r', encoding="utf-8") as fin:
+        with open(file_path, "r", encoding="utf-8") as fin:
             lines = fin.readlines()
 
         segments, mapping = segment(lines, stride, window, min_window)
-        segments = list(filter(
-            None,
-            (validate_diacritics(seg) for seg in segments)
-        ))
+        segments = list(filter(None, (validate_diacritics(seg) for seg in segments)))
 
-        with open(save_path, 'w', encoding="utf-8") as fout:
-            fout.write('\n'.join(segments))
+        with open(save_path, "w", encoding="utf-8") as fout:
+            fout.write("\n".join(segments))
         _LOGGER.info(f"Saved to file: {save_path}")
 
         if export_map:
-            with open(map_path, 'w', encoding="utf-8") as fout:
+            with open(map_path, "w", encoding="utf-8") as fout:
                 for sent_idx, seg_idx, word_idx, char_idx in mapping:
                     fout.write(f"{sent_idx}, {seg_idx}, {word_idx}, {char_idx}\n")
             _LOGGER.info(f"Exporting map to file: {map_path}")
@@ -184,5 +189,5 @@ def main():
     _LOGGER.info("Process is complete")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

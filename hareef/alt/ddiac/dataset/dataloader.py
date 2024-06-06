@@ -1,18 +1,17 @@
 # coding: utf-8
 
 import os
-import numpy as np
 
+import numpy as np
 import torch as T
-from pyarabic.araby import tokenize, strip_tashkeel
+from pyarabic.araby import strip_tashkeel, tokenize
 from torch.utils.data import DataLoader, Dataset
 
 from .data_utils import DatasetUtils
 
 
 class DataRetriever(Dataset):
-
-    def __init__(self, dtype, data_utils : DatasetUtils, is_test : bool = False):
+    def __init__(self, dtype, data_utils: DatasetUtils, is_test: bool = False):
         super(DataRetriever).__init__()
 
         self.data_utils = data_utils
@@ -21,9 +20,9 @@ class DataRetriever(Dataset):
         subpath = f"-{data_utils.stride}-{data_utils.window}.txt"
         if is_test:
             subpath = f"-{data_utils.test_stride}-{data_utils.test_window}.txt"
-   
+
         path = os.path.join(data_utils.base_path, dtype + subpath)
-        with open(path, 'r', encoding="utf-8") as fin:
+        with open(path, "r", encoding="utf-8") as fin:
             self.lines = fin.readlines()
 
         if data_utils.debug:
@@ -33,7 +32,7 @@ class DataRetriever(Dataset):
         return [T.tensor(np.array(x), dtype=dtype) for x in data]
 
     def __len__(self):
-        return len(self.lines) 
+        return len(self.lines)
 
     def __getitem__(self, idx):
         word_x, char_x, diac_x, diac_y = self.create_sentence(idx)
@@ -48,18 +47,32 @@ class DataRetriever(Dataset):
         diac_x = []
         diac_y = []
         diac_y_tmp = []
-        
+
         for word in tokens:
             split_word = self.data_utils.split_word_on_characters_with_diacritics(word)
             cx, cy, cy_3head = self.data_utils.create_label_for_word(split_word)
 
             word_strip = strip_tashkeel(word)
-            word_x += [self.data_utils.w2idx[word_strip] if word_strip in self.data_utils.w2idx else self.data_utils.w2idx["<pad>"]]
+            word_x += [
+                self.data_utils.w2idx[word_strip]
+                if word_strip in self.data_utils.w2idx
+                else self.data_utils.w2idx["<pad>"]
+            ]
 
             char_x += [self.data_utils.pad_sequence(cx, self.data_utils.max_word_len)]
-            
-            diac_y += [self.data_utils.pad_sequence(cy, self.data_utils.max_word_len, pad=self.data_utils.pad_target_val)]
-            diac_y_tmp += [self.data_utils.pad_sequence(cy_3head, self.data_utils.max_word_len, pad=[self.data_utils.pad_target_val]*3)]
+
+            diac_y += [
+                self.data_utils.pad_sequence(
+                    cy, self.data_utils.max_word_len, pad=self.data_utils.pad_target_val
+                )
+            ]
+            diac_y_tmp += [
+                self.data_utils.pad_sequence(
+                    cy_3head,
+                    self.data_utils.max_word_len,
+                    pad=[self.data_utils.pad_target_val] * 3,
+                )
+            ]
 
         diac_x = self.data_utils.create_decoder_input(diac_y_tmp)
 
@@ -69,8 +82,10 @@ class DataRetriever(Dataset):
         pt_val = self.data_utils.pad_target_val
 
         word_x = self.data_utils.pad_sequence(word_x, max_slen)
-        char_x = self.data_utils.pad_sequence(char_x, max_slen, pad=[p_val]*max_wlen)
-        diac_x = self.data_utils.pad_sequence(diac_x, max_slen, pad=[[p_val]*8]*max_wlen)
-        diac_y = self.data_utils.pad_sequence(diac_y, max_slen, pad=[pt_val]*max_wlen)
+        char_x = self.data_utils.pad_sequence(char_x, max_slen, pad=[p_val] * max_wlen)
+        diac_x = self.data_utils.pad_sequence(
+            diac_x, max_slen, pad=[[p_val] * 8] * max_wlen
+        )
+        diac_y = self.data_utils.pad_sequence(diac_y, max_slen, pad=[pt_val] * max_wlen)
 
         return word_x, char_x, diac_x, diac_y

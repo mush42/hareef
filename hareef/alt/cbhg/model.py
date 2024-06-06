@@ -8,11 +8,13 @@ from typing import Optional
 
 import more_itertools
 import torch
-from torch.optim.lr_scheduler import LambdaLR
-from hareef.learning_rates import LearningRateDecay
-from hareef.utils import calculate_error_rates, format_error_rates_as_table, categorical_accuracy
 from lightning.pytorch import LightningModule
 from torch import nn, optim
+from torch.optim.lr_scheduler import LambdaLR
+
+from hareef.learning_rates import LearningRateDecay
+from hareef.utils import (calculate_error_rates, categorical_accuracy,
+                          format_error_rates_as_table)
 
 from .dataset import load_test_data, load_validation_data
 from .diacritizer import TorchCBHGDiacritizer
@@ -187,7 +189,7 @@ class CBHGModel(LightningModule):
             LearningRateDecay(
                 self.config["learning_rate"],
                 float(self.config["warmup_steps"]),
-            )
+            ),
         )
         return [optimizer], [self.scheduler]
 
@@ -201,8 +203,7 @@ class CBHGModel(LightningModule):
         ] == 0:
             data_loader = load_validation_data(self.config)
             error_rates = self.evaluate_with_error_rates(
-                data_loader,
-                Path(self.trainer.log_dir).joinpath("predictions")
+                data_loader, Path(self.trainer.log_dir).joinpath("predictions")
             )
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
@@ -210,8 +211,7 @@ class CBHGModel(LightningModule):
         self._log_epoch_metrics(self.test_step_outputs)
         data_loader = load_test_data(self.config)
         error_rates = self.evaluate_with_error_rates(
-            data_loader,
-            Path(self.trainer.log_dir).joinpath("predictions")
+            data_loader, Path(self.trainer.log_dir).joinpath("predictions")
         )
         _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 

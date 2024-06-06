@@ -9,13 +9,14 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint
 from lightning import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
 
+from hareef.utils import find_last_checkpoint
+
 from ..config import Config
-from ..dataset import load_training_data, load_val_data, load_test_data
+from ..dataset import load_test_data, load_training_data, load_val_data
 from .model import DiacritizerD2
 
 _LOGGER = logging.getLogger("hareef.cbhg.train")
@@ -65,7 +66,11 @@ def main():
     stopping_delta = config["train"]["stopping-delta"]
     stopping_patience = config["train"]["stopping-patience"]
     loss_early_stop_callback = EarlyStopping(
-        monitor="val_loss", min_delta=stopping_delta, patience=stopping_patience, mode="min", strict=True
+        monitor="val_loss",
+        min_delta=stopping_delta,
+        patience=stopping_patience,
+        mode="min",
+        strict=True,
     )
     plugins = []
     if config["train"]["mixed-precision"]:
@@ -120,9 +125,7 @@ def main():
         train_loader, val_loader = load_training_data(config), load_val_data(config)
         inference_config_path = logs_root_directory.joinpath("inference-config.json")
         with open(inference_config_path, "w", encoding="utf-8", newline="\n") as file:
-            json.dump(
-                "\n", file, ensure_ascii=False, indent=2
-            )
+            json.dump("\n", file, ensure_ascii=False, indent=2)
         _LOGGER.info(f"Writing inference config to file: `{inference_config_path}`")
         _LOGGER.info("Training loop starting...")
         trainer.fit(model, train_loader, val_loader)

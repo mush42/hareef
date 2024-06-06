@@ -8,8 +8,8 @@ import pandas as pd
 import torch
 from diacritization_evaluation import util
 from torch.utils.data import DataLoader, Dataset
-from hareef.utils import clamp
 
+from hareef.utils import clamp
 
 _LOGGER = logging.getLogger(__name__)
 

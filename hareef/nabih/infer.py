@@ -8,9 +8,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint
 from pysbd import Segmenter
 
+from hareef.utils import find_last_checkpoint
 
 from .config import Config
 from .diacritizer import OnnxDiacritizer, TorchDiacritizer
@@ -38,8 +38,14 @@ def main():
     parser.add_argument("--input-file", type=str, required=False)
     parser.add_argument("--output-file", type=str, required=False)
     parser.add_argument("--text", dest="text", type=str, required=False)
-    split_choices = ['sentence', 'line', 'none']
-    parser.add_argument("--split-by", type=str, choices=split_choices, default=split_choices[0], help="Split text  (sentence recommended)")
+    split_choices = ["sentence", "line", "none"]
+    parser.add_argument(
+        "--split-by",
+        type=str,
+        choices=split_choices,
+        default=split_choices[0],
+        help="Split text  (sentence recommended)",
+    )
     parser.add_argument("--checkpoint", type=str, required=False)
     parser.add_argument("--onnx", type=str, required=False)
 
@@ -84,16 +90,18 @@ def main():
                 )
                 sys.exit(-1)
 
-        model = NabihModel.load_from_checkpoint(args.checkpoint, map_location=args.device, config=config)
+        model = NabihModel.load_from_checkpoint(
+            args.checkpoint, map_location=args.device, config=config
+        )
         model.freeze()
         diacritizer = TorchDiacritizer(config, model=model)
         _LOGGER.info("Using torch backend for inference")
 
-    if args.split_by == 'sentence':
+    if args.split_by == "sentence":
         _LOGGER.info("Splitting input text by sentence")
-        sent_segmenter = Segmenter(language='ar')
+        sent_segmenter = Segmenter(language="ar")
         inputs = sent_segmenter.segment(input_text)
-    elif args.split_by == 'line':
+    elif args.split_by == "line":
         _LOGGER.info("Splitting input text by line")
         inputs = input_text.splitlines()
     else:
@@ -103,18 +111,16 @@ def main():
     sents, infer_time = diacritizer.diacritize_text(inputs, args.batch_size)
 
     if (len(inputs) / args.batch_size) > 1.0:
-        _LOGGER.info(f"Average inference time per batch (batch size={args.batch_size}): {infer_time} (ms)")
+        _LOGGER.info(
+            f"Average inference time per batch (batch size={args.batch_size}): {infer_time} (ms)"
+        )
     else:
         _LOGGER.info(f"Inference time: {infer_time} (ms)")
 
     output_text = "\n".join(sents)
     if args.output_file:
         _LOGGER.info(f"Writing output to file `{args.output_file}`")
-        Path(args.output_file).write_text(
-            output_text,
-            encoding="utf-8",
-            newline="\n"
-        )
+        Path(args.output_file).write_text(output_text, encoding="utf-8", newline="\n")
     else:
         _LOGGER.info("Diacritized sentences:\n" + output_text)
 

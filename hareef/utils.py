@@ -11,13 +11,11 @@ import matplotlib.pyplot as plt
 import more_itertools
 import numpy as np
 import torch
-from diacritization_evaluation import der, wer
-from diacritization_evaluation import util
+from diacritization_evaluation import der, util, wer
 from torch import nn
 
 from hareef.constants import DIACRITIC_LABELS
 from hareef.text_cleaners import valid_arabic_cleaner
-
 
 CHECKPOINT_RE = re.compile(r"epoch=(?P<epoch>[0-9]+)-step=(?P<step>[0-9]+)")
 
@@ -27,7 +25,6 @@ def sequence_mask(length, max_length: Optional[int] = None):
         max_length = length.max()
     x = torch.arange(max_length, dtype=length.dtype, device=length.device)
     return x.unsqueeze(0) < length.unsqueeze(1)
-
 
 
 def clamp(value, min_value, max_value):
@@ -175,19 +172,27 @@ def calculate_error_rates(
     assert os.path.isfile(target_file_path)
 
     _wer = wer.calculate_wer_from_path(
-        original_path=original_file_path, predicted_path=target_file_path, case_ending=True
+        original_path=original_file_path,
+        predicted_path=target_file_path,
+        case_ending=True,
     )
 
     _wer_without_case_ending = wer.calculate_wer_from_path(
-        original_path=original_file_path, predicted_path=target_file_path, case_ending=False
+        original_path=original_file_path,
+        predicted_path=target_file_path,
+        case_ending=False,
     )
 
     _der = der.calculate_der_from_path(
-        original_path=original_file_path, predicted_path=target_file_path, case_ending=True
+        original_path=original_file_path,
+        predicted_path=target_file_path,
+        case_ending=True,
     )
 
     _der_without_case_ending = der.calculate_der_from_path(
-        original_path=original_file_path, predicted_path=target_file_path, case_ending=False
+        original_path=original_file_path,
+        predicted_path=target_file_path,
+        case_ending=False,
     )
 
     return {
@@ -238,17 +243,16 @@ def find_last_checkpoint(logs_root_directory):
     checkpoints_dir = Path(logs_root_directory)
     available_checkpoints = {
         file: CHECKPOINT_RE.match(file.stem)
-        for file in (
-            item for item in checkpoints_dir.rglob("*.ckpt")
-            if item.is_file()
-        )
+        for file in (item for item in checkpoints_dir.rglob("*.ckpt") if item.is_file())
     }
     available_checkpoints = {
         filename: (int(match.groupdict()["epoch"]), int(match.groupdict()["step"]))
         for (filename, match) in available_checkpoints.items()
         if match is not None
     }
-    available_checkpoints = sorted(available_checkpoints.items(), key=lambda item: item[1])
+    available_checkpoints = sorted(
+        available_checkpoints.items(), key=lambda item: item[1]
+    )
     checkpoint = more_itertools.last(available_checkpoints, default=None)
     if checkpoint is None:
         raise FileNotFoundError("No checkpoints were found")
@@ -297,10 +301,14 @@ def format_error_rates_as_table(error_rates):
 def generate_confusion_matrix(test_lines, pred_lines, plot=False, fig_save_path=None):
     confusion_dict = {}
     for test_line, pred_line in zip(test_lines, pred_lines):
-        test_line, pred_line = valid_arabic_cleaner(test_line), valid_arabic_cleaner(pred_line)
+        test_line, pred_line = valid_arabic_cleaner(test_line), valid_arabic_cleaner(
+            pred_line
+        )
         test_diacritics = util.extract_haraqat(test_line)[-1]
         pred_diacritics = util.extract_haraqat(pred_line)[-1]
-        assert len(test_diacritics) == len(pred_diacritics), "Ground truth and predictions must be equal in length"
+        assert len(test_diacritics) == len(
+            pred_diacritics
+        ), "Ground truth and predictions must be equal in length"
         for t_d, p_d in zip(test_diacritics, pred_diacritics):
             try:
                 confusion_dict[t_d][p_d] += 1
@@ -317,23 +325,50 @@ def generate_confusion_matrix(test_lines, pred_lines, plot=False, fig_save_path=
             if p_d not in info:
                 info[p_d] = 0
 
-    confusion_matrix = np.array([[confusion_dict[x][y] for y in sorted(ys)] for x in sorted(confusion_dict.keys())])
+    confusion_matrix = np.array(
+        [
+            [confusion_dict[x][y] for y in sorted(ys)]
+            for x in sorted(confusion_dict.keys())
+        ]
+    )
     confusion_matrix = confusion_matrix / confusion_matrix.sum(axis=-1, keepdims=True)
     plt.figure(dpi=150)
-    plt.imshow(confusion_matrix, cmap='Blues')
-    plt.ylabel('Test data')
-    plt.xlabel('Predicted data')
+    plt.imshow(confusion_matrix, cmap="Blues")
+    plt.ylabel("Test data")
+    plt.xlabel("Predicted data")
     ax = plt.gca()
     ax.set_yticks(np.arange(len(confusion_dict)))
     ax.set_xticks(np.arange(len(ys)))
-    ax.set_yticklabels([DIACRITIC_LABELS.get(x, "None") for x in sorted(confusion_dict.keys())], fontname='Arial', fontsize=7)
-    ax.set_xticklabels([DIACRITIC_LABELS.get(x, "None") for x in sorted(ys)], fontname='Arial', fontsize=7)
+    ax.set_yticklabels(
+        [DIACRITIC_LABELS.get(x, "None") for x in sorted(confusion_dict.keys())],
+        fontname="Arial",
+        fontsize=7,
+    )
+    ax.set_xticklabels(
+        [DIACRITIC_LABELS.get(x, "None") for x in sorted(ys)],
+        fontname="Arial",
+        fontsize=7,
+    )
     ax.xaxis.tick_top()
-    ax.xaxis.set_label_position('top')
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="left", va='bottom', rotation_mode="anchor")
+    ax.xaxis.set_label_position("top")
+    plt.setp(
+        ax.get_xticklabels(),
+        rotation=45,
+        ha="left",
+        va="bottom",
+        rotation_mode="anchor",
+    )
     for i in range(len(confusion_dict)):
         for j in range(len(ys)):
-            ax.text(j, i, '{:.1%}'.format(confusion_matrix[i, j]), ha="center", va="center", color="slategrey", fontsize=5)
+            ax.text(
+                j,
+                i,
+                "{:.1%}".format(confusion_matrix[i, j]),
+                ha="center",
+                va="center",
+                color="slategrey",
+                fontsize=5,
+            )
     plt.tight_layout()
 
     if fig_save_path:
@@ -349,4 +384,4 @@ def get_model_size_mb(model):
     buf = io.BytesIO()
     torch.save(model.state_dict(), buf)
     num_bytes = len(buf.getbuffer())
-    return num_bytes //1e6
+    return num_bytes // 1e6

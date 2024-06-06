@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
 from hareef.utils import find_last_checkpoint
 
 from .config import Config
@@ -84,7 +85,10 @@ def main():
         opset_version=OPSET_VERSION,
         export_params=True,
         do_constant_folding=True,
-        input_names=["input", "input_lengths",],
+        input_names=[
+            "input",
+            "input_lengths",
+        ],
         output_names=["output"],
         dynamic_axes={
             "input": {0: "batch_size", 1: "text"},

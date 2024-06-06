@@ -9,10 +9,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint
 from lightning import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
+
+from hareef.utils import find_last_checkpoint
 
 from .config import Config
 from .dataset import load_test_data, load_training_data, load_validation_data
@@ -61,9 +62,13 @@ def main():
 
     checkpoint_save_callbacks = []
     if config["model_save_steps"]:
-        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_train_steps=config["model_save_steps"]))
+        checkpoint_save_callbacks.append(
+            ModelCheckpoint(every_n_train_steps=config["model_save_steps"])
+        )
     if config["model_save_epochs"]:
-        checkpoint_save_callbacks.append(ModelCheckpoint(every_n_epochs=config["model_save_epochs"]))
+        checkpoint_save_callbacks.append(
+            ModelCheckpoint(every_n_epochs=config["model_save_epochs"])
+        )
 
     loss_early_stop_callback = EarlyStopping(
         monitor="val_loss", min_delta=0.00, patience=10, mode="min", strict=True

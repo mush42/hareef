@@ -9,28 +9,27 @@ from typing import Optional, Tuple
 import more_itertools
 import numpy as np
 import torch
-from torch.nn import functional as F
+from lightning.pytorch import LightningModule
 from torch import nn, optim
+from torch.nn import functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim.lr_scheduler import LambdaLR
+
 from hareef.learning_rates import adjust_learning_rate
-from hareef.utils import (
-    calculate_error_rates,
-    format_error_rates_as_table,
-    categorical_accuracy,
-)
-from lightning.pytorch import LightningModule
+from hareef.utils import (calculate_error_rates, categorical_accuracy,
+                          format_error_rates_as_table)
 
+from .dataset import load_test_data, load_validation_data
 from .diacritizer import TorchDiacritizer
-from .dataset import load_validation_data, load_test_data
 from .modules.attentions import MultiHeadAttention, sequence_mask
-
 
 _LOGGER = logging.getLogger(__package__)
 
 
 class MashkoolGRU(nn.Module):
-    def __init__(self, *args, vertical_dropout=0.0, use_layernorm=False, pad_idx=0.0, **kwargs):
+    def __init__(
+        self, *args, vertical_dropout=0.0, use_layernorm=False, pad_idx=0.0, **kwargs
+    ):
         super().__init__()
         self.dropout = output_dropout = kwargs.pop("dropout", 0.0)
         self.gru = nn.GRU(*args, dropout=vertical_dropout, **kwargs)
@@ -41,17 +40,23 @@ class MashkoolGRU(nn.Module):
             bidirectional = self.gru.bidirectional
             hidden_size = self.gru.hidden_size
             normalized_shape = (hidden_size * 2) if bidirectional else hidden_size
-            self.layernorm = nn.LayerNorm(
-                normalized_shape=normalized_shape,
-                eps=1e-6
-            )
+            self.layernorm = nn.LayerNorm(normalized_shape=normalized_shape, eps=1e-6)
         else:
             self.layernorm = nn.Identity()
 
-    def forward(self, input: torch.Tensor, lengths: torch.Tensor, hx: Optional[torch.Tensor]=None) -> torch.Tensor:
-        packed_input = pack_padded_sequence(input, lengths, batch_first=self.batch_first)
+    def forward(
+        self,
+        input: torch.Tensor,
+        lengths: torch.Tensor,
+        hx: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        packed_input = pack_padded_sequence(
+            input, lengths, batch_first=self.batch_first
+        )
         output, hx = self.gru(packed_input, hx)
-        output, _lengths = pad_packed_sequence(output, batch_first=self.batch_first, padding_value=self.pad_idx)
+        output, _lengths = pad_packed_sequence(
+            output, batch_first=self.batch_first, padding_value=self.pad_idx
+        )
         output = self.layernorm(output)
         return self.dropout(output.tanh())
 
@@ -77,7 +82,7 @@ class MashkoolModel(LightningModule):
             max_len=config["max_len"],
             gru_info=config["gru_info"],
             gru_dropout=config["gru_dropout"],
-        attention_num_heads=config["attention_num_heads"],
+            attention_num_heads=config["attention_num_heads"],
             attention_dropout=config["attention_dropout"],
             input_pad_idx=self.config.text_encoder.input_pad_id,
             target_pad_idx=self.config.text_encoder.target_pad_id,
@@ -104,38 +109,40 @@ class MashkoolModel(LightningModule):
         self.char_embedding = nn.Embedding(
             inp_vocab_size, embedding_dim, padding_idx=input_pad_idx
         )
-        self.gru_layers = nn.ModuleList([
-            MashkoolGRU(
-                input_size=embedding_dim,
-                hidden_size=gru1_dim,
-                num_layers=gru1_num_layers,
-                batch_first=True,
-                bidirectional=True,
-                dropout=gru_dropout,
-                use_layernorm=True,
-                pad_idx=input_pad_idx,
-            ),
-            MashkoolGRU(
-                input_size=gru1_dim * 2,
-                hidden_size=gru2_dim,
-                num_layers=gru2_num_layers,
-                batch_first=True,
-                bidirectional=True,
-                dropout=gru_dropout,
-                use_layernorm=True,
-                pad_idx=input_pad_idx,
-            ),
-            MashkoolGRU(
-                input_size=gru2_dim * 2,
-                hidden_size=gru3_dim,
-                num_layers=gru3_num_layers,
-                batch_first=True,
-                bidirectional=True,
-                dropout=gru_dropout,
-                use_layernorm=True,
-                pad_idx=input_pad_idx,
-            ),
-        ])
+        self.gru_layers = nn.ModuleList(
+            [
+                MashkoolGRU(
+                    input_size=embedding_dim,
+                    hidden_size=gru1_dim,
+                    num_layers=gru1_num_layers,
+                    batch_first=True,
+                    bidirectional=True,
+                    dropout=gru_dropout,
+                    use_layernorm=True,
+                    pad_idx=input_pad_idx,
+                ),
+                MashkoolGRU(
+                    input_size=gru1_dim * 2,
+                    hidden_size=gru2_dim,
+                    num_layers=gru2_num_layers,
+                    batch_first=True,
+                    bidirectional=True,
+                    dropout=gru_dropout,
+                    use_layernorm=True,
+                    pad_idx=input_pad_idx,
+                ),
+                MashkoolGRU(
+                    input_size=gru2_dim * 2,
+                    hidden_size=gru3_dim,
+                    num_layers=gru3_num_layers,
+                    batch_first=True,
+                    bidirectional=True,
+                    dropout=gru_dropout,
+                    use_layernorm=True,
+                    pad_idx=input_pad_idx,
+                ),
+            ]
+        )
         gru_output_dim = gru3_dim * 2
         self.attention = MultiHeadAttention(
             channels=gru_output_dim,
@@ -144,7 +151,7 @@ class MashkoolModel(LightningModule):
             p_dropout=attention_dropout,
             proximal_bias=True,
             proximal_init=True,
-            window_size=max_len // attention_num_heads
+            window_size=max_len // attention_num_heads,
         )
         self.projections = nn.Linear(gru_output_dim, targ_vocab_size)
 
@@ -193,13 +200,13 @@ class MashkoolModel(LightningModule):
             self.parameters(),
             lr=self.config["learning_rate"],
             betas=tuple(self.config["adam_betas"]),
-            eps=self.config["adamw_eps"]
+            eps=self.config["adamw_eps"],
         )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             factor=self.config["lr_factor"],
             patience=self.config["lr_patience"],
-            min_lr=self.config["min_lr"]
+            min_lr=self.config["min_lr"],
         )
         return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "loss"}
 
@@ -216,17 +223,22 @@ class MashkoolModel(LightningModule):
             error_rates = self.evaluate_with_error_rates(
                 diacritizer,
                 data_loader=data_loader,
-                num_batches = self.config["error_rates_n_batches"],
-                predictions_dir=Path(self.trainer.log_dir).joinpath("predictions")
+                num_batches=self.config["error_rates_n_batches"],
+                predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
             )
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
             if self.logger is not None:
                 num_batches = max(
-                    self.config["n_predicted_text_tensorboard"] // self.config["batch_size"],
-                    1
+                    self.config["n_predicted_text_tensorboard"]
+                    // self.config["batch_size"],
+                    1,
                 )
-                for i, (gt, pred) in enumerate(self.example_predictions(data_loader, diacritizer, num_batches)):
-                    self.logger.experiment.add_text(f"example-text/{i}", f"{gt} |->  {pred}")
+                for i, (gt, pred) in enumerate(
+                    self.example_predictions(data_loader, diacritizer, num_batches)
+                ):
+                    self.logger.experiment.add_text(
+                        f"example-text/{i}", f"{gt} |->  {pred}"
+                    )
 
     def on_test_epoch_end(self) -> None:
         self._log_epoch_metrics(self.test_step_outputs)
@@ -235,8 +247,8 @@ class MashkoolModel(LightningModule):
         error_rates = self.evaluate_with_error_rates(
             diacritizer,
             data_loader=data_loader,
-            num_batches = self.config["error_rates_n_batches"],
-            predictions_dir=Path(self.trainer.log_dir).joinpath("predictions")
+            num_batches=self.config["error_rates_n_batches"],
+            predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
         )
         _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
@@ -249,21 +261,30 @@ class MashkoolModel(LightningModule):
     def _process_batch(self, batch):
         batch["src"] = batch["src"].to(self.device)
         batch["target"] = batch["target"].to(self.device)
-        batch["lengths"] = batch["lengths"].to('cpu')
+        batch["lengths"] = batch["lengths"].to("cpu")
         outputs = self(batch["src"], batch["lengths"])
         predictions = outputs["diacritics"].contiguous()
         targets = batch["target"].contiguous()
         predictions = predictions.view(-1, predictions.shape[-1])
         targets = targets.view(-1)
-        diac_loss = self.diacritics_loss(predictions.to(self.device), targets.to(self.device))
-        diac_accuracy = categorical_accuracy(predictions.to(self.device), targets.to(self.device), self.target_pad_idx, device=self.device)
+        diac_loss = self.diacritics_loss(
+            predictions.to(self.device), targets.to(self.device)
+        )
+        diac_accuracy = categorical_accuracy(
+            predictions.to(self.device),
+            targets.to(self.device),
+            self.target_pad_idx,
+            device=self.device,
+        )
         return {
             "loss": diac_loss,
             "accuracy": diac_accuracy,
         }
 
     @staticmethod
-    def evaluate_with_error_rates(diacritizer, data_loader, num_batches, predictions_dir):
+    def evaluate_with_error_rates(
+        diacritizer, data_loader, num_batches, predictions_dir
+    ):
         predictions_dir = Path(predictions_dir)
         predictions_dir.mkdir(parents=True, exist_ok=True)
         all_orig = []

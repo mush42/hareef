@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+
 from hareef.utils import find_last_checkpoint
 
 from .config import Config

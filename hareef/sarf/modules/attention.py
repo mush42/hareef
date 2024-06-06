@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+
 import torch
 from torch import nn
 
@@ -31,7 +32,7 @@ class MultiheadAttention(nn.Module):
             raise ValueError("this model requires pytorch 2.0 or higher")
 
         if self.is_cross_attention:
-            kv_input_dim = (self.hidden_size)
+            kv_input_dim = self.hidden_size
             self.q_proj = nn.Linear(
                 self.hidden_size,
                 num_heads * self.head_dim,
@@ -66,7 +67,11 @@ class MultiheadAttention(nn.Module):
         )
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
-        return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
+        return (
+            tensor.view(bsz, seq_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+            .contiguous()
+        )
 
     def forward(
         self,
@@ -79,15 +84,39 @@ class MultiheadAttention(nn.Module):
         # if key_value_states are provided this layer is used as a cross-attention layer
         is_cross_attention = self.is_cross_attention or key_value_states is not None
         bsz, q_len, _ = hidden_states.size()
-        query_states = self.q_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        query_states = (
+            self.q_proj(hidden_states)
+            .view(bsz, q_len, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+        )
         if not is_cross_attention:
-            key_states = self.k_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-            value_states = self.v_proj(hidden_states).view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-        else:
-            _, kv_len, _ = key_value_states.size()  # Note that, in this case, `kv_len` == `kv_seq_len`
-            key_states = self.k_proj(key_value_states).view(bsz, kv_len, self.num_heads, self.head_dim).transpose(1, 2)
+            key_states = (
+                self.k_proj(hidden_states)
+                .view(bsz, q_len, self.num_heads, self.head_dim)
+                .transpose(1, 2)
+            )
             value_states = (
-                self.v_proj(key_value_states).view(bsz, kv_len, self.num_heads, self.head_dim).transpose(1, 2)
+                self.v_proj(hidden_states)
+                .view(bsz, q_len, self.num_heads, self.head_dim)
+                .transpose(1, 2)
+            )
+        else:
+            (
+                _,
+                kv_len,
+                _,
+            ) = (
+                key_value_states.size()
+            )  # Note that, in this case, `kv_len` == `kv_seq_len`
+            key_states = (
+                self.k_proj(key_value_states)
+                .view(bsz, kv_len, self.num_heads, self.head_dim)
+                .transpose(1, 2)
+            )
+            value_states = (
+                self.v_proj(key_value_states)
+                .view(bsz, kv_len, self.num_heads, self.head_dim)
+                .transpose(1, 2)
             )
         kv_seq_len = key_states.shape[-2]
         if past_key_value is not None:
@@ -117,4 +146,3 @@ class MultiheadAttention(nn.Module):
         attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
         attn_output = self.o_proj(attn_output)
         return attn_output, past_key_value
-

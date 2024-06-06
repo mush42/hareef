@@ -7,9 +7,9 @@ import sys
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint
 from pysbd import Segmenter
 
+from hareef.utils import find_last_checkpoint
 
 from .config import Config
 from .diacritizer import OnnxDiacritizer, TorchDiacritizer
@@ -35,8 +35,14 @@ def main():
         help="Device used for inference",
     )
     parser.add_argument("--text", dest="text", type=str, required=True)
-    split_choices = ['sentence', 'line', 'none']
-    parser.add_argument("--split-by", type=str, choices=split_choices, default=split_choices[0], help="Split text  (sentence recommended)")
+    split_choices = ["sentence", "line", "none"]
+    parser.add_argument(
+        "--split-by",
+        type=str,
+        choices=split_choices,
+        default=split_choices[0],
+        help="Split text  (sentence recommended)",
+    )
     parser.add_argument("--checkpoint", type=str, required=False)
     parser.add_argument("--onnx", type=str, required=False)
 
@@ -72,10 +78,10 @@ def main():
         model.freeze()
         diacritizer = TorchDiacritizer(config, model=model)
 
-    if args.split_by == 'sentence':
-        sent_segmenter = Segmenter(language='ar')
+    if args.split_by == "sentence":
+        sent_segmenter = Segmenter(language="ar")
         inputs = sent_segmenter.segment(args.text)
-    elif args.split_by == 'line':
+    elif args.split_by == "line":
         inputs = args.text.splitlines()
     else:
         inputs = [args.text]

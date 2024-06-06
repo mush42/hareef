@@ -12,30 +12,24 @@ from typing import Optional, Tuple
 import more_itertools
 import numpy as np
 import torch
+from diacritization_evaluation.util import extract_haraqat
+from lightning.pytorch import LightningModule
 from torch import nn, optim
+from torch.nn import LayerNorm, TransformerEncoder, TransformerEncoderLayer
 from torch.nn import functional as F
-from torch.nn import TransformerEncoderLayer, LayerNorm, TransformerEncoder
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
-from diacritization_evaluation.util import extract_haraqat
+
 from hareef.learning_rates import adjust_learning_rate
-from hareef.utils import (
-    calculate_error_rates,
-    format_error_rates_as_table,
-    categorical_accuracy,
-)
-from lightning.pytorch import LightningModule
+from hareef.utils import (calculate_error_rates, categorical_accuracy,
+                          format_error_rates_as_table)
 
+from .dataset import load_test_data, load_validation_data
 from .diacritizer import TorchDiacritizer
-from .dataset import load_validation_data, load_test_data
-from .modules.utils import (
-    get_dedup_tokens,
-    _make_len_mask,
-    _generate_square_subsequent_mask,
-    PositionalEncoding,
-)
-
+from .modules.utils import (PositionalEncoding,
+                            _generate_square_subsequent_mask, _make_len_mask,
+                            get_dedup_tokens)
 
 _LOGGER = logging.getLogger(__package__)
 

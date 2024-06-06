@@ -4,9 +4,9 @@ import dataclasses
 import typing
 from typing import Any, Optional
 
+from hareef.constants import (ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS,
+                              PUNCTUATIONS, WORD_SEPARATOR)
 from hareef.text_cleaners import valid_arabic_cleaner
-from hareef.constants import ALL_POSSIBLE_DIACRITICS, ARABIC_LETTERS, PUNCTUATIONS, WORD_SEPARATOR
-
 
 PAD = "<PAD>"
 INPUT_TOKENS = [PAD, WORD_SEPARATOR, *sorted(PUNCTUATIONS), *sorted(ARABIC_LETTERS)]
@@ -16,7 +16,7 @@ TARGET_ID_MAP = {char: idx for idx, char in enumerate(TARGET_TOKENS)}
 DEFAULT_TOKEN_MAP = {
     "pad": PAD,
     "input_id_map": INPUT_ID_MAP,
-    "target_id_map": TARGET_ID_MAP
+    "target_id_map": TARGET_ID_MAP,
 }
 
 
@@ -31,11 +31,10 @@ class CBHGTokenConfig:
         return cls(**DEFAULT_TOKEN_MAP)
 
 
-
 class CBHGTextEncoder:
     """Clean text, prepare input, and convert output."""
 
-    def __init__(self, config: CBHGTokenConfig=None):
+    def __init__(self, config: CBHGTokenConfig = None):
         self.config = CBHGTokenConfig.default() if config is None else config
 
         self.input_symbols: list[str] = list(self.config.input_id_map.keys())
@@ -56,12 +55,14 @@ class CBHGTextEncoder:
         self.target_pad_id = self.target_symbol_to_id[self.pad]
 
         self.meta_input_token_ids = {self.input_pad_id}
-        self.meta_target_token_ids = {self.target_pad_id,}
+        self.meta_target_token_ids = {
+            self.target_pad_id,
+        }
 
     def input_to_sequence(self, text: str) -> list[int]:
         seq = [self.input_symbol_to_id[s] for s in text if s != self.pad]
         return seq
-    
+
     def target_to_sequence(self, text: str) -> list[int]:
         seq = [self.target_symbol_to_id[s] for s in text if s != self.pad]
         return seq

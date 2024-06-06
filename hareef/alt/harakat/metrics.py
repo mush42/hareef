@@ -9,15 +9,13 @@ from tempfile import TemporaryDirectory
 import more_itertools
 import numpy as np
 import torch
-from hareef.utils import (
-    find_last_checkpoint,
-    format_error_rates_as_table,
-    generate_confusion_matrix,
-)
+
+from hareef.utils import (find_last_checkpoint, format_error_rates_as_table,
+                          generate_confusion_matrix)
 
 from .config import Config
-from .diacritizer import TorchDiacritizer, OnnxDiacritizer
 from .dataset import load_test_data, load_validation_data
+from .diacritizer import OnnxDiacritizer, TorchDiacritizer
 from .model import HarakatModel
 
 _LOGGER = logging.getLogger(__package__)

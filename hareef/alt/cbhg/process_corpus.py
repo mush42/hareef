@@ -5,7 +5,6 @@ import sys
 
 from ..process_corpus import main as proc_main
 from ..process_corpus import process_corpus_arg_parser
-
 from .config import Config
 
 

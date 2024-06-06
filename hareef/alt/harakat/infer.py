@@ -7,9 +7,9 @@ import sys
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint
 from pysbd import Segmenter
 
+from hareef.utils import find_last_checkpoint
 
 from .config import Config
 from .diacritizer import OnnxDiacritizer, TorchDiacritizer
@@ -48,7 +48,12 @@ def main():
         action="store_true",
         help="Strip diacritics from text before inference",
     )
-    parser.add_argument("--grule-p", type=float, default=None, help="Turn on golden rule, and sets the golden-rule threshold")
+    parser.add_argument(
+        "--grule-p",
+        type=float,
+        default=None,
+        help="Turn on golden rule, and sets the golden-rule threshold",
+    )
     parser.add_argument("--checkpoint", type=str, required=False)
     parser.add_argument("--onnx", type=str, required=False)
 

@@ -9,9 +9,10 @@ import numpy as np
 import pandas as pd
 import torch
 from diacritization_evaluation import util
-from torch.utils.data import DataLoader, Dataset, BatchSampler, ConcatDataset, WeightedRandomSampler
-from hareef.utils import clamp
+from torch.utils.data import (BatchSampler, ConcatDataset, DataLoader, Dataset,
+                              WeightedRandomSampler)
 
+from hareef.utils import clamp
 
 LOADER_NUM_WORKERS = 0
 
@@ -45,9 +46,9 @@ class DiacritizationDataset(Dataset):
         inputs = torch.LongTensor(self.text_encoder.input_to_sequence(tokenized_text))
         diacritics = torch.LongTensor(self.text_encoder.target_to_sequence(diacs))
         hints = self._generate_diac_hints(diacs)
-        char2pos = torch.LongTensor([
-            t for (c, t) in self.text_encoder.chars_to_pos_tags(tokenized_text)
-        ])
+        char2pos = torch.LongTensor(
+            [t for (c, t) in self.text_encoder.chars_to_pos_tags(tokenized_text)]
+        )
 
         return inputs, hints, diacritics, char2pos, text
 
@@ -112,7 +113,9 @@ def make_dataset(config, data_split):
     with open(txt_path, encoding="utf8") as file:
         lines = file.readlines()
         lines = [line for line in lines if len(line) <= config["max_len"]]
-    diac_dataset =  DiacritizationDataset(config, [idx for idx in range(len(lines))], lines)
+    diac_dataset = DiacritizationDataset(
+        config, [idx for idx in range(len(lines))], lines
+    )
     return diac_dataset
 
 
@@ -121,11 +124,7 @@ def load_training_data(config, **loader_parameters):
     loader_parameters.setdefault("batch_size", config["batch_size"])
     loader_parameters.setdefault("shuffle", True)
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
-    train_iterator = DataLoader(
-        dataset,
-        collate_fn=collate_fn,
-        **loader_parameters
-    )
+    train_iterator = DataLoader(dataset, collate_fn=collate_fn, **loader_parameters)
     _LOGGER.info(f"Length of training iterator = {len(train_iterator)}")
     return train_iterator
 
@@ -134,11 +133,7 @@ def load_test_data(config, **loader_parameters):
     dataset = make_dataset(config, "test")
     loader_parameters.setdefault("batch_size", config["batch_size"])
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
-    test_iterator = DataLoader(
-        dataset,
-        collate_fn=collate_fn,
-        **loader_parameters
-    )
+    test_iterator = DataLoader(dataset, collate_fn=collate_fn, **loader_parameters)
     _LOGGER.info(f"Length of test iterator = {len(test_iterator)}")
     return test_iterator
 
@@ -148,29 +143,19 @@ def load_validation_data(config, **loader_parameters):
 
     loader_parameters.setdefault("batch_size", config["batch_size"])
     loader_parameters.setdefault("num_workers", LOADER_NUM_WORKERS)
-    valid_iterator = DataLoader(
-        dataset,
-        collate_fn=collate_fn,
-        **loader_parameters
-    )
+    valid_iterator = DataLoader(dataset, collate_fn=collate_fn, **loader_parameters)
     _LOGGER.info(f"Length of valid iterator = {len(valid_iterator)}")
     return valid_iterator
 
 
 def load_inference_data(config, sents, batch_size=None, **loader_parameters):
-    infer_dataset = DiacritizationDataset(
-        config,
-        list(range(len(sents))),
-        sents
-    )
+    infer_dataset = DiacritizationDataset(config, list(range(len(sents))), sents)
 
-    loader_parameters.setdefault(
-        "batch_size", batch_size or config["batch_size"]
-    )
+    loader_parameters.setdefault("batch_size", batch_size or config["batch_size"])
     loader_parameters.setdefault("num_workers", 0)
     infer_iterator = DataLoader(
         infer_dataset,
         collate_fn=partial(collate_fn, enforce_sorted=False),
-        **loader_parameters
+        **loader_parameters,
     )
     return infer_iterator

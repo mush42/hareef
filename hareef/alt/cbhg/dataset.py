@@ -91,16 +91,12 @@ def load_training_data(config, **loader_parameters):
             sep=config["data_separator"],
             header=None,
         )
-        training_set = DiacritizationDataset(
-            config, train_data.index, train_data
-        )
+        training_set = DiacritizationDataset(config, train_data.index, train_data)
     else:
         path = os.path.join(config.data_dir, "train.txt")
         with open(path, encoding="utf8") as file:
             train_data = file.readlines()
-            train_data = [
-                text for text in train_data if len(text) <= config["max_len"]
-            ]
+            train_data = [text for text in train_data if len(text) <= config["max_len"]]
         training_set = DiacritizationDataset(
             config, [idx for idx in range(len(train_data))], train_data
         )
@@ -130,9 +126,7 @@ def load_test_data(config, **loader_parameters):
         path = os.path.join(config.data_dir, test_file_name)
         with open(path, encoding="utf8") as file:
             test_data = file.readlines()
-        test_data = [
-            text for text in test_data if len(text) <= config["max_len"]
-        ]
+        test_data = [text for text in test_data if len(text) <= config["max_len"]]
         test_dataset = DiacritizationDataset(
             config, [idx for idx in range(len(test_data))], test_data
         )
@@ -153,16 +147,12 @@ def load_validation_data(config, **loader_parameters):
             sep=config["data_separator"],
             header=None,
         )
-        valid_dataset = DiacritizationDataset(
-            config, valid_data.index, valid_data
-        )
+        valid_dataset = DiacritizationDataset(config, valid_data.index, valid_data)
     else:
         path = os.path.join(config.data_dir, "val.txt")
         with open(path, encoding="utf8") as file:
             valid_data = file.readlines()
-        valid_data = [
-            text for text in valid_data if len(text) <= config["max_len"]
-        ]
+        valid_data = [text for text in valid_data if len(text) <= config["max_len"]]
         valid_dataset = DiacritizationDataset(
             config, [idx for idx in range(len(valid_data))], valid_data
         )

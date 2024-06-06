@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 import torch
+
 from hareef.utils import find_last_checkpoint, format_error_rates_as_table
 
 from .config import Config
@@ -37,9 +38,9 @@ def main():
     parser.add_argument(
         "--datasplit",
         type=str,
-        choices=['val', 'test'],
+        choices=["val", "test"],
         default="val",
-        help="Dataset split to use (val or test)"
+        help="Dataset split to use (val or test)",
     )
     parser.add_argument("--checkpoint", type=str, required=False)
 
@@ -73,7 +74,11 @@ def main():
     )
     model.freeze()
 
-    iterator = load_test_data(config) if args.datasplit == 'test' else load_validation_data(config)
+    iterator = (
+        load_test_data(config)
+        if args.datasplit == "test"
+        else load_validation_data(config)
+    )
     try:
         with TemporaryDirectory() as predictions_dir:
             error_rates = model.evaluate_with_error_rates(iterator, predictions_dir)

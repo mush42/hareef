@@ -7,7 +7,6 @@ from torch.optim.lr_scheduler import LambdaLR
 
 
 class LearningRateDecay:
-
     def __init__(self, lr=0.002, warmup_steps=4000.0) -> None:
         self.lr = lr
         self.warmup_steps = warmup_steps

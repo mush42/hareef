@@ -12,47 +12,39 @@ from typing import Optional, Tuple
 import more_itertools
 import numpy as np
 import torch
+from diacritization_evaluation.util import extract_haraqat
+from lightning.pytorch import LightningModule
 from torch import nn, optim
 from tqdm import tqdm
-from diacritization_evaluation.util import extract_haraqat
-from hareef.utils import (
-    sequence_mask,
-    calculate_error_rates,
-    format_error_rates_as_table,
-    categorical_accuracy,
-)
-from lightning.pytorch import LightningModule
 
+from hareef.utils import (calculate_error_rates, categorical_accuracy,
+                          format_error_rates_as_table, sequence_mask)
+
+from .dataset import load_test_data, load_validation_data
 from .diacritizer import TorchDiacritizer
-from .dataset import load_validation_data, load_test_data
 from .modules.conformer import ConformerBlock, ScaledSinusoidalEmbedding
 from .modules.pos_encoder_backbone import POSEncoderBackbone
-
-
 
 _LOGGER = logging.getLogger(__package__)
 
 
 class POSEncoder(LightningModule):
-    def __init__(self, dim, num_pos_tags):
+    def __init__(self, dim):
         super().__init__()
-        self.backbone = POSEncoderBackbone(
+        self.conv_backbone = POSEncoderBackbone(
             input_channels=dim,
-            dim=dim * 2,
+            dim=dim,
             intermediate_dim=dim * 4,
-            num_layers=6,
+            num_layers=2,
         )
-        self.act = nn.GLU()
-        self.fc_out = nn.Linear(dim, num_pos_tags)
+        self.attn_backbone = ConformerBlock(
+            dim, ffm_dropout=0.1, attn_dropout=0.1, cgm_dropout=0.2
+        )
 
-    def forward(self, x, train=True):
-        x = x.permute(0, -1, 1)
-        x = self.backbone(x)
-        x = self.act(x)
-        logits = None
-        if train:
-            logits = self.fc_out(x)
-        return x, logits
+    def forward(self, x, lengths, attn_mask, pos_enc):
+        x = self.conv_backbone(x)
+        x = self.attn_backbone(x, lengths, attn_mask, pos_enc)
+        return x
 
 
 class ConvNorm(nn.Module):
@@ -114,7 +106,9 @@ class ConvNorm(nn.Module):
             dilation=dilation,
             bias=bias,
         )
-        nn.init.xavier_uniform_(self.conv.weight, gain=nn.init.calculate_gain(w_init_gain))
+        nn.init.xavier_uniform_(
+            self.conv.weight, gain=nn.init.calculate_gain(w_init_gain)
+        )
         if self.use_weight_norm:
             self.conv = nn.utils.weight_norm(self.conv)
 
@@ -167,69 +161,61 @@ class SarfModel(LightningModule):
         num_pos_tags,
         input_pad_idx,
     ):
+        self.pos_enc = ScaledSinusoidalEmbedding(d_model)
         self.char_emb = nn.Embedding(inp_vocab_size, d_model, padding_idx=input_pad_idx)
-        self.diac_emb = nn.Embedding(hint_vocab_size, d_model, padding_idx=input_pad_idx)
+        self.diac_emb = nn.Embedding(
+            hint_vocab_size, d_model, padding_idx=input_pad_idx
+        )
         nn.init.uniform_(self.char_emb.weight, -1, 1)
         nn.init.uniform_(self.diac_emb.weight, -1, 1)
-        self.pos_enc = ScaledSinusoidalEmbedding(d_model)
-        self.dense = nn.Sequential(
-            nn.Linear(d_model, 256),
-            nn.Linear(256, 128),
-            nn.Linear(128, d_model)
-        )
-        self.attn_layers = nn.ModuleList([
-            ConformerBlock(
-                d_model,
-                ffm_dropout=0.2,
-                attn_dropout=0.2,
-                cgm_dropout=0.3
-            )
-            for _ in range(3)
-        ])
         pos_encoder_dim = 64
         output_dim = d_model + pos_encoder_dim
-        self.pos_encoder = POSEncoder(pos_encoder_dim, num_pos_tags)
-        self.conv = nn.ModuleList([
-            ConvNorm(output_dim, output_dim, kernel_size=k, use_weight_norm=True)
-            for k in (1, 3, 5, 7)
-        ])
-        self.act = nn.GLU()
+        self.pos_encoder = POSEncoder(pos_encoder_dim)
+        self.dense = nn.Sequential(
+            nn.Linear(output_dim, output_dim * 2),
+            nn.Linear(output_dim * 2, output_dim),
+            nn.Linear(output_dim, d_model)
+        )
+        self.attn_layers = nn.ModuleList(
+            [
+                ConformerBlock(
+                    d_model, ffm_dropout=0.2, attn_dropout=0.2, cgm_dropout=0.3
+                )
+                for _ in range(4)
+            ]
+        )
         self.res_layernorm = nn.LayerNorm(d_model)
-        self.fc_out = nn.Linear(d_model, targ_vocab_size)
+        self.diac_fc_out = nn.Linear(d_model, targ_vocab_size)
+        self.pos_fc_out = nn.Linear(d_model, num_pos_tags)
 
-    def forward(self, char_inputs, diac_inputs, lengths, train=True):
-        length_mask = sequence_mask(
-            lengths, char_inputs.size(1)
-        ).type_as(char_inputs)
+    def forward(self, char_inputs, diac_inputs, lengths):
+        length_mask = sequence_mask(lengths, char_inputs.size(1)).type_as(char_inputs)
 
-        char_emb = self.char_emb(char_inputs) * 16.00000
-        diac_emb = self.diac_emb(diac_inputs) * 32.000
-        emb = self.dense(char_emb + diac_emb)
+        x = self.char_emb(char_inputs) * 16.00000
 
-        pos_enc = self.pos_enc(emb)
-        b, t, d = emb.size()
+        pos_enc = self.pos_enc(x)
+        b, t, d = x.size()
         attn_mask = length_mask.bool().unsqueeze(1).unsqueeze(2)
         attn_mask = attn_mask.expand(b, 1, t, t)
-        attn_out = emb
+
+        x = x + self.diac_emb(diac_inputs) * 32.000
+        pos_emb = self.pos_encoder(x, lengths, attn_mask, pos_enc)
+        x = torch.concat([x, pos_emb], dim=-1)
+        x = self.dense(x)
+
+        attn_out = x
         for attn_layer in self.attn_layers:
             attn_out = attn_layer(attn_out, lengths, attn_mask, pos_enc)
 
-        pos_emb, pos_logits = self.pos_encoder(attn_out)
-        x = torch.concat([attn_out, pos_emb], dim=-1)
-        mask = length_mask.unsqueeze(1).float()
-        x = x.permute(0, 2, 1)
-        for conv in self.conv:
-            x = conv(x, mask=mask)
-        x = x.permute(0, 2, 1)
-        x = self.act(x)
-
         x = x + attn_out
         x = self.res_layernorm(x)
-        x = self.fc_out(x)
-        return x, pos_logits
+        diac_logits = self.diac_fc_out(x)
+        pos_logits = self.pos_fc_out(x)
+        return diac_logits, pos_logits
 
+    @torch.inference_mode()
     def predict(self, char_inputs, diac_inputs, lengths):
-        output, __ = self(char_inputs, diac_inputs, lengths, train=False)
+        output, __ = self(char_inputs, diac_inputs, lengths)
         logits = output.softmax(dim=2)
         predictions = torch.argmax(logits, dim=2)
         return predictions.byte(), logits
@@ -267,17 +253,23 @@ class SarfModel(LightningModule):
             factor=self.hparams.lr_factor,
             patience=self.hparams.lr_patience,
             min_lr=self.hparams.min_lr,
-            mode='min',
+            mode="min",
             cooldown=1,
         )
-        return {"optimizer": optimizer, "lr_scheduler": scheduler, "monitor": "val_loss"}
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
 
     def on_train_epoch_end(self):
         self._log_epoch_metrics(self.training_step_outputs)
 
     def on_validation_epoch_end(self) -> None:
         self._log_epoch_metrics(self.val_step_outputs)
-        if ((self.current_epoch + 1) % self.hparams.evaluate_with_error_rates_epochs) == 0:
+        if (
+            (self.current_epoch + 1) % self.hparams.evaluate_with_error_rates_epochs
+        ) == 0:
             data_loader = load_validation_data(self.config)
             diacritizer = TorchDiacritizer(self.config, model=self)
             error_rates = self.evaluate_with_error_rates(
@@ -286,10 +278,9 @@ class SarfModel(LightningModule):
                 num_batches=self.config["error_rates_n_batches"],
                 predictions_dir=Path(self.trainer.log_dir).joinpath("predictions"),
             )
-            self.log_dict({
-                k.replace("*", "_star"): v
-                for (k, v) in error_rates.items()
-            })
+            self.log_dict(
+                {k.replace("*", "_star"): v for (k, v) in error_rates.items()}
+            )
             _LOGGER.info("Error Rates:\n" + format_error_rates_as_table(error_rates))
 
     def on_test_epoch_end(self) -> None:
@@ -314,7 +305,7 @@ class SarfModel(LightningModule):
         predictions, pos_predictions = self(
             batch["chars"].to(self.device),
             batch["diacs"].to(self.device),
-            batch["lengths"].to("cpu")
+            batch["lengths"].to("cpu"),
         )
         target = batch["target"].contiguous()
         pos_target = batch["char2pos"].contiguous()
@@ -324,9 +315,7 @@ class SarfModel(LightningModule):
         pos_predictions = pos_predictions.view(-1, pos_predictions.shape[-1])
         pos_targets = pos_target.view(-1)
 
-        diac_loss = self.criterion(
-            predictions.to(self.device), targets.to(self.device)
-        )
+        diac_loss = self.criterion(predictions.to(self.device), targets.to(self.device))
         pos_loss = self.pos_criterion(
             pos_predictions.to(self.device), pos_targets.to(self.device)
         )

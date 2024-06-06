@@ -1,29 +1,28 @@
 from math import ceil
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from einops import pack, rearrange, unpack
+from torch import nn
 
-from einops import rearrange, pack, unpack
-from .autoregressive_wrapper import top_p, top_k, eval_decorator
+from .autoregressive_wrapper import eval_decorator, top_k, top_p
 
 # helper functions
+
 
 def exists(val):
     return val is not None
 
+
 def divisible_by(numer, denom):
-    return (numer % denom) == 0 
+    return (numer % denom) == 0
+
 
 # xl autoregressive wrapper class
 
+
 class XLAutoregressiveWrapper(nn.Module):
-    def __init__(
-        self,
-        net,
-        ignore_index = -100,
-        pad_value = 0
-    ):
+    def __init__(self, net, ignore_index=-100, pad_value=0):
         super().__init__()
         self.pad_value = pad_value
         self.ignore_index = ignore_index
@@ -37,30 +36,25 @@ class XLAutoregressiveWrapper(nn.Module):
         self,
         start_tokens,
         seq_len,
-        eos_token = None,
-        temperature = 1.,
-        filter_logits_fn = top_k,
-        filter_thres = 0.9,
-        mems = None,
+        eos_token=None,
+        temperature=1.0,
+        filter_logits_fn=top_k,
+        filter_thres=0.9,
+        mems=None,
         **kwargs
     ):
         device, max_seq_len = start_tokens.device, self.max_seq_len
 
-        start_tokens, ps = pack([start_tokens], '* n')
+        start_tokens, ps = pack([start_tokens], "* n")
 
         b, t = start_tokens.shape
 
-        *all_leading_tokens, _ = start_tokens.split(max_seq_len, dim = -1)
+        *all_leading_tokens, _ = start_tokens.split(max_seq_len, dim=-1)
 
         # catch the memory up to the current segment
 
         for leading_tokens in all_leading_tokens:
-            _, mems = self.net(
-                leading_tokens,
-                mems = mems,
-                return_mems = True,
-                **kwargs
-            )
+            _, mems = self.net(leading_tokens, mems=mems, return_mems=True, **kwargs)
 
         # now start sampling from the current segment
 
@@ -75,15 +69,10 @@ class XLAutoregressiveWrapper(nn.Module):
 
             x = out[:, curr_pos:]
 
-            logits, mems = self.net(
-                x,
-                mems = curr_mems,
-                return_mems = True,
-                **kwargs
-            )
+            logits, mems = self.net(x, mems=curr_mems, return_mems=True, **kwargs)
 
             logits = logits[:, -1]
-            filtered_logits = filter_logits_fn(logits, thres = filter_thres)
+            filtered_logits = filter_logits_fn(logits, thres=filter_thres)
             probs = F.softmax(filtered_logits / temperature, dim=-1)
 
             sample = torch.multinomial(probs, 1)
@@ -95,27 +84,22 @@ class XLAutoregressiveWrapper(nn.Module):
             out = torch.cat((out, sample), dim=-1)
 
             if exists(eos_token):
-                is_eos_tokens = (out == eos_token)
+                is_eos_tokens = out == eos_token
 
-                if is_eos_tokens.any(dim = -1).all():
+                if is_eos_tokens.any(dim=-1).all():
                     # mask out everything after the eos tokens
                     shifted_is_eos_tokens = F.pad(is_eos_tokens, (1, -1))
-                    mask = shifted_is_eos_tokens.float().cumsum(dim = -1) >= 1
+                    mask = shifted_is_eos_tokens.float().cumsum(dim=-1) >= 1
                     out = out.masked_fill(mask, self.pad_value)
                     break
 
         out = out[:, t:]
 
-        out, = unpack(out, ps, '* n')
+        (out,) = unpack(out, ps, "* n")
 
         return out
 
-    def forward(
-        self,
-        x,
-        mems = None,
-        **kwargs
-    ):
+    def forward(self, x, mems=None, **kwargs):
         ignore_index, max_seq_len = self.ignore_index, self.max_seq_len
 
         x, labels = x[:, :-1], x[:, 1:]
@@ -124,27 +108,23 @@ class XLAutoregressiveWrapper(nn.Module):
 
         # prepare chunks
 
-        split_x = x.split(max_seq_len, dim = -1)
-        split_labels = labels.split(max_seq_len, dim = -1)
+        split_x = x.split(max_seq_len, dim=-1)
+        split_labels = labels.split(max_seq_len, dim=-1)
         loss_weights = tuple(map(lambda t: t.shape[-1] / seq_len, split_x))
 
         # go through each chunk and derive weighted losses
 
-        total_loss = 0.        
+        total_loss = 0.0
 
-        for chunk, chunk_labels, loss_weight in zip(split_x, split_labels, loss_weights):
-
-            logits, mems = self.net(
-                chunk,
-                mems = mems,
-                return_mems = True,
-                **kwargs
-            )
+        for chunk, chunk_labels, loss_weight in zip(
+            split_x, split_labels, loss_weights
+        ):
+            logits, mems = self.net(chunk, mems=mems, return_mems=True, **kwargs)
 
             loss = F.cross_entropy(
-                rearrange(logits, 'b n c -> b c n'),
+                rearrange(logits, "b n c -> b c n"),
                 chunk_labels,
-                ignore_index = ignore_index
+                ignore_index=ignore_index,
             )
 
             total_loss = total_loss + loss * loss_weight

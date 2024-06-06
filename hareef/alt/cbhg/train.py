@@ -9,10 +9,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hareef.utils import find_last_checkpoint
 from lightning import Trainer
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from lightning.pytorch.plugins.precision import MixedPrecisionPlugin
+
+from hareef.utils import find_last_checkpoint
 
 from .config import Config
 from .dataset import load_test_data, load_training_data, load_validation_data

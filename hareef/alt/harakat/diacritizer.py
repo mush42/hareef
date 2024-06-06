@@ -7,8 +7,9 @@ import numpy as np
 import onnxruntime
 import torch
 from diacritization_evaluation.util import extract_haraqat
-from hareef.text_cleaners import valid_arabic_cleaner
 from more_itertools import padded
+
+from hareef.text_cleaners import valid_arabic_cleaner
 
 
 class Diacritizer:
@@ -19,7 +20,7 @@ class Diacritizer:
         config,
         *,
         apply_golden_rule: Optional[bool] = False,
-        golden_rule_threshold: Optional[float]=1.0,
+        golden_rule_threshold: Optional[float] = 1.0,
         take_hints=True
     ) -> None:
         self.config = config
@@ -30,18 +31,14 @@ class Diacritizer:
         self.input_pad_id = self.text_encoder.input_pad_id
         self.target_pad_id = self.text_encoder.target_pad_id
 
-    def diacritize_text(self,sentences: list[str]):
+    def diacritize_text(self, sentences: list[str]):
         sentences = [valid_arabic_cleaner(sent) for sent in sentences]
 
-        parsed_sents = [extract_haraqat(sent) for sent in sentences] # -> (original, characters, diacritics)
-        char_seqs = [
-            self.text_encoder.input_to_sequence(ps[1])
-            for ps in parsed_sents
-        ]
-        diac_seqs = [
-            self.text_encoder.target_to_sequence(ps[2])
-            for ps in parsed_sents
-        ]
+        parsed_sents = [
+            extract_haraqat(sent) for sent in sentences
+        ]  # -> (original, characters, diacritics)
+        char_seqs = [self.text_encoder.input_to_sequence(ps[1]) for ps in parsed_sents]
+        diac_seqs = [self.text_encoder.target_to_sequence(ps[2]) for ps in parsed_sents]
 
         lengths = [len(seq) for seq in char_seqs]
         max_len = max(lengths)
@@ -82,7 +79,7 @@ class Diacritizer:
                 list(output_ids),
                 list(probs),
                 self.apply_golden_rule,
-                self.golden_rule_threshold
+                self.golden_rule_threshold,
             )
             output_sentences.append(out_sent)
 

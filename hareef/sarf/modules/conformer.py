@@ -1,5 +1,6 @@
 import math
 from typing import Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,28 +11,28 @@ from .hgru import HGRU
 
 
 class ScaledSinusoidalEmbedding(nn.Module):
-    def __init__(self, dim, theta = 10000):
+    def __init__(self, dim, theta=10000):
         super().__init__()
         assert (dim % 2) == 0
-        self.scale = nn.Parameter(torch.ones(1) * dim ** -0.5).float()
+        self.scale = nn.Parameter(torch.ones(1) * dim**-0.5).float()
 
         half_dim = dim // 2
         freq_seq = torch.arange(half_dim).float() / half_dim
         inv_freq = theta ** -freq_seq.float()
-        self.register_buffer('inv_freq', inv_freq, persistent = False)
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
 
-    def forward(self, x, pos = None, seq_start_pos = None):
+    def forward(self, x, pos=None, seq_start_pos=None):
         seq_len = x.size(1)
         device = x.device
 
         if pos is None:
-            pos = torch.arange(seq_len, device = device)
+            pos = torch.arange(seq_len, device=device)
 
         if seq_start_pos is not None:
             pos = pos - seq_start_pos[..., None]
 
-        emb = einsum('i, j -> i j', pos.float(), self.inv_freq)
-        emb = torch.cat((emb.sin(), emb.cos()), dim = -1)
+        emb = einsum("i, j -> i j", pos.float(), self.inv_freq)
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb * self.scale
 
 
@@ -44,7 +45,7 @@ class FeedForwardModule(nn.Module):
             nn.SiLU(),
             nn.Dropout(dropout),
             nn.Linear(dim * mult, dim),
-            nn.Dropout(dropout)
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
@@ -57,16 +58,31 @@ class ConformerGRUModule(nn.Module):
         inner_dim = dim * expansion_factor
         self.layernorm = nn.LayerNorm(dim)
         self.gru1 = HGRU(
-            dim, inner_dim,  batch_first=True, bidirectional=True, pad_idx=pad_idx, sum_bidi=True
+            dim,
+            inner_dim,
+            batch_first=True,
+            bidirectional=True,
+            pad_idx=pad_idx,
+            sum_bidi=True,
         )
         self.act1 = nn.GLU(dim=1)
         self.gru2 = HGRU(
-            dim, inner_dim,  batch_first=True, bidirectional=True, pad_idx=pad_idx, sum_bidi=True
+            dim,
+            inner_dim,
+            batch_first=True,
+            bidirectional=True,
+            pad_idx=pad_idx,
+            sum_bidi=True,
         )
         self.batchnorm = nn.BatchNorm1d(inner_dim)
         self.act2 = nn.SiLU()
         self.gru3 = HGRU(
-            inner_dim, dim,  batch_first=True, bidirectional=True, pad_idx=pad_idx, sum_bidi=True
+            inner_dim,
+            dim,
+            batch_first=True,
+            bidirectional=True,
+            pad_idx=pad_idx,
+            sum_bidi=True,
         )
         self.dropout = nn.Dropout(dropout)
 
@@ -82,7 +98,7 @@ class ConformerGRUModule(nn.Module):
 
 
 class AttentionModule(nn.Module):
-    def __init__(self, dim, n_head=8, dropout=0.):
+    def __init__(self, dim, n_head=8, dropout=0.0):
         super(AttentionModule, self).__init__()
         self.layernorm = nn.LayerNorm(dim)
         self.attn = MultiheadAttention(dim, n_head, dropout)
@@ -95,8 +111,16 @@ class AttentionModule(nn.Module):
 
 
 class ConformerBlock(nn.Module):
-    def __init__(self, dim, n_head=8, ffm_mult=4, cgm_expansion_factor=2, 
-                 ffm_dropout=0., attn_dropout=0., cgm_dropout=0.):
+    def __init__(
+        self,
+        dim,
+        n_head=8,
+        ffm_mult=4,
+        cgm_expansion_factor=2,
+        ffm_dropout=0.0,
+        attn_dropout=0.0,
+        cgm_dropout=0.0,
+    ):
         super(ConformerBlock, self).__init__()
         self.ffm1 = FeedForwardModule(dim, ffm_mult, dropout=ffm_dropout)
         self.attn = AttentionModule(dim, n_head, dropout=attn_dropout)
@@ -111,4 +135,3 @@ class ConformerBlock(nn.Module):
         x = x + 0.5 * self.ffm2(x)
         x = self.post_norm(x)
         return x
-

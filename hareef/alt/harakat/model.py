@@ -10,27 +10,22 @@ from typing import Optional, Tuple
 import more_itertools
 import numpy as np
 import torch
-from torch.nn import functional as F
+from diacritization_evaluation.util import extract_haraqat
+from lightning.pytorch import LightningModule
 from torch import nn, optim
+from torch.nn import functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.optim.lr_scheduler import LambdaLR
 from tqdm import tqdm
-from diacritization_evaluation.util import extract_haraqat
-from hareef.learning_rates import adjust_learning_rate
-from hareef.utils import (
-    sequence_mask,
-    calculate_error_rates,
-    format_error_rates_as_table,
-    categorical_accuracy,
-)
-from lightning.pytorch import LightningModule
-
-from .diacritizer import TorchDiacritizer
-from .dataset import load_validation_data, load_test_data
-from .modules.pos_encoding import PositionalEncoding
-
 from x_transformers.x_transformers import Attention
 
+from hareef.learning_rates import adjust_learning_rate
+from hareef.utils import (calculate_error_rates, categorical_accuracy,
+                          format_error_rates_as_table, sequence_mask)
+
+from .dataset import load_test_data, load_validation_data
+from .diacritizer import TorchDiacritizer
+from .modules.pos_encoding import PositionalEncoding
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -43,8 +38,8 @@ class HGRU(nn.Module):
         vertical_dropout=0.0,
         use_layernorm=False,
         pad_idx=0.0,
-        sum_bidi_output: Optional[bool]=True,
-        use_pos_encoding: Optional[bool]=False,
+        sum_bidi_output: Optional[bool] = True,
+        use_pos_encoding: Optional[bool] = False,
         **kwargs,
     ):
         super().__init__()
@@ -81,10 +76,7 @@ class HGRU(nn.Module):
             output = output[:, :, : self.hidden_size] + output[:, :, self.hidden_size :]
         output = self.layernorm(output)
         if self.use_pos_encoding:
-            mask = torch.unsqueeze(
-                sequence_mask(lengths, output.size(1)).bool(),
-                1
-            )
+            mask = torch.unsqueeze(sequence_mask(lengths, output.size(1)).bool(), 1)
             pos_enc_input = output
             rope_out, _ = self.pos_encoder(lengths.max(), output.device)
             rope_out = rope_out
@@ -107,10 +99,15 @@ class HEmbedding(nn.Module):
         lin_out = self.lin(embed_out)
         lin_weighted = lin_out * 16.000000
         pose_enc_input = lin_weighted.permute(0, 2, 1)
-        pos_enc_mask = torch.unsqueeze(
-            sequence_mask(lengths, lin_weighted.shape[1]), 1
-        ).bool().to(src.device)
-        return self.pos_enc(pose_enc_input, mask=pos_enc_mask).permute(0, 2, 1) + lin_weighted
+        pos_enc_mask = (
+            torch.unsqueeze(sequence_mask(lengths, lin_weighted.shape[1]), 1)
+            .bool()
+            .to(src.device)
+        )
+        return (
+            self.pos_enc(pose_enc_input, mask=pos_enc_mask).permute(0, 2, 1)
+            + lin_weighted
+        )
 
 
 class HEncoder(nn.Module):
@@ -138,7 +135,7 @@ class HEncoder(nn.Module):
         layernorm_out = self.attn_layernorm(x).to(x.device)
 
         attn_mask = sequence_mask(lengths, layernorm_out.shape[-1]).to(x.device)
-        attn_out , __ = self.attention(layernorm_out)
+        attn_out, __ = self.attention(layernorm_out)
 
         attn_out = attn_out + residual
 
@@ -151,22 +148,16 @@ class HOutput(nn.Module):
     def __init__(self, input_dim, output_dim, max_len):
         super().__init__()
         self.layernorm1 = nn.LayerNorm(input_dim)
-        self.pos_enc1 = PositionalEncoding(
-            channels=input_dim,
-            max_len=max_len
-        )
+        self.pos_enc1 = PositionalEncoding(channels=input_dim, max_len=max_len)
         self.lin = nn.Linear(input_dim, input_dim, bias=False)
         self.layernorm2 = nn.LayerNorm(input_dim)
-        self.pos_enc2 = PositionalEncoding(
-            channels=input_dim,
-            max_len=max_len
-        )
+        self.pos_enc2 = PositionalEncoding(channels=input_dim, max_len=max_len)
         self.projections = nn.Linear(input_dim, output_dim)
 
     def forward(self, x, lengths):
-        pos_enc_mask = torch.unsqueeze(
-            sequence_mask(lengths, x.shape[1]), 1
-        ).bool().to(x.device)
+        pos_enc_mask = (
+            torch.unsqueeze(sequence_mask(lengths, x.shape[1]), 1).bool().to(x.device)
+        )
 
         layernorm1_out = self.layernorm1(x).to(x.device)
         pose_enc1_input = layernorm1_out.permute(0, 2, 1)

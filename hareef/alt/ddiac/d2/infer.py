@@ -12,31 +12,24 @@ from pyarabic.araby import tokenize
 from tqdm import tqdm
 
 from hareef.utils import find_last_checkpoint
+
 from ..config import Config
 from ..dataset import DataRetriever, load_test_data
 from .model import DiacritizerD2
 
-
 _LOGGER = logging.getLogger(__package__)
-DIACRITICS = {
-    "FATHA": 1,
-    "KASRA": 2,
-    "DAMMA": 3,
-    "SUKUN": 4
-}
+DIACRITICS = {"FATHA": 1, "KASRA": 2, "DAMMA": 3, "SUKUN": 4}
 
 
-
-class D2Predictor: 
-
+class D2Predictor:
     def __init__(self, model):
         self.model = model
         self.config = model.config
         self.data_utils = self.config.data_utils
         self.data_loader = load_test_data(self.config, is_test=True)
 
-        self.mapping = self.data_utils.load_mapping_v3('test')
-        self.original_lines = self.data_utils.load_file_clean('test', strip=True)
+        self.mapping = self.data_utils.load_mapping_v3("test")
+        self.original_lines = self.data_utils.load_file_clean("test", strip=True)
 
     def shakkel_char(self, diac: int, tanween: bool, shadda: bool) -> str:
         text = ""
@@ -55,24 +48,33 @@ class D2Predictor:
         return text
 
     def predict(self):
-        y_gen_diac, y_gen_tanween, y_gen_shadda = self.model.predict(self.data_loader)        
+        y_gen_diac, y_gen_tanween, y_gen_shadda = self.model.predict(self.data_loader)
         diacritized_lines = []
         _LOGGER.info("Processing lines")
-        for sent_idx, line in tqdm(enumerate(self.original_lines), total=len(self.original_lines)):
+        for sent_idx, line in tqdm(
+            enumerate(self.original_lines), total=len(self.original_lines)
+        ):
             diacritized_line = ""
-            line = ' '.join(tokenize(line))
+            line = " ".join(tokenize(line))
             for char_idx, char in enumerate(line):
                 diacritized_line += char
                 char_vote_haraka, char_vote_shadda, char_vote_tanween = [], [], []
-                if sent_idx not in self.mapping: continue
+                if sent_idx not in self.mapping:
+                    continue
                 for seg_idx in self.mapping[sent_idx]:
-                    for t_idx in self.mapping[sent_idx][seg_idx]: 
+                    for t_idx in self.mapping[sent_idx][seg_idx]:
                         if char_idx in self.mapping[sent_idx][seg_idx][t_idx]:
-                            c_idx = self.mapping[sent_idx][seg_idx][t_idx].index(char_idx)
+                            c_idx = self.mapping[sent_idx][seg_idx][t_idx].index(
+                                char_idx
+                            )
                             try:
-                                char_vote_haraka  += [y_gen_diac[seg_idx][t_idx][c_idx]]
-                                char_vote_shadda  += [y_gen_shadda[seg_idx][t_idx][c_idx]]
-                                char_vote_tanween += [y_gen_tanween[seg_idx][t_idx][c_idx]]
+                                char_vote_haraka += [y_gen_diac[seg_idx][t_idx][c_idx]]
+                                char_vote_shadda += [
+                                    y_gen_shadda[seg_idx][t_idx][c_idx]
+                                ]
+                                char_vote_tanween += [
+                                    y_gen_tanween[seg_idx][t_idx][c_idx]
+                                ]
                             except IndexError:
                                 pass
 
@@ -80,16 +82,20 @@ class D2Predictor:
                     char_mv_diac = Counter(char_vote_haraka).most_common()[0][0]
                     char_mv_shadda = Counter(char_vote_shadda).most_common()[0][0]
                     char_mv_tanween = Counter(char_vote_tanween).most_common()[0][0]
-                    diacritized_line += self.shakkel_char(char_mv_diac, char_mv_tanween, char_mv_shadda)
-            
+                    diacritized_line += self.shakkel_char(
+                        char_mv_diac, char_mv_tanween, char_mv_shadda
+                    )
+
             diacritized_lines += [diacritized_line.strip()]
         return diacritized_lines
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='hareef.ddiac.d2.infer')
-    parser.add_argument('--config', type=str, required=True, help='path of config file')
-    parser.add_argument('--checkpoint', type=str, help='path to checkpoint to use for inference')
+    parser = argparse.ArgumentParser(description="hareef.ddiac.d2.infer")
+    parser.add_argument("--config", type=str, required=True, help="path of config file")
+    parser.add_argument(
+        "--checkpoint", type=str, help="path to checkpoint to use for inference"
+    )
     args = parser.parse_args()
 
     config = Config(args.config)
@@ -115,8 +121,10 @@ if __name__ == "__main__":
 
     exp_id = config["session"].split("-")[-1].lower()
 
-    target_file = Path(config["paths"]["logs"]).joinpath('predictions', f'predictions_{exp_id}.txt')
+    target_file = Path(config["paths"]["logs"]).joinpath(
+        "predictions", f"predictions_{exp_id}.txt"
+    )
     target_file.parent.mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f"Writing predictions to file: `{target_file}`")
-    with open(target_file, 'w', encoding='utf-8') as fout:
-        fout.write('\n'.join(diacritized_lines))
+    with open(target_file, "w", encoding="utf-8") as fout:
+        fout.write("\n".join(diacritized_lines))
