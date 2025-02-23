@@ -38,9 +38,13 @@ class DiacritizationDataset(Dataset):
     def __getitem__(self, index):
         id = self.list_ids[index]
         data = self.data[id]
-        data = self.text_encoder.clean(data)
 
-        text, char_inputs, diacs = util.extract_haraqat(data)
+        try:
+            data = self.text_encoder.clean(data)
+            text, char_inputs, diacs = util.extract_haraqat(data)
+        except:
+            idx = (id + 1) % len(self.data)
+            return self.__getitem__(idx)
         tokenized_text = "".join(char_inputs)
 
         inputs = torch.LongTensor(self.text_encoder.input_to_sequence(tokenized_text))

@@ -99,6 +99,7 @@ def main():
     trainer = Trainer(
         accelerator=args.accelerator,
         devices=args.devices,
+        accumulate_grad_batches=config["accumulate_grad_batches"],
         check_val_every_n_epoch=config["evaluate_epochs"],
         callbacks=callbacks,
         plugins=plugins,
